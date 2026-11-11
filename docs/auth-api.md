@@ -1,0 +1,45 @@
+# 가입·로그인 API
+
+Spring Security 서버 세션을 사용한다. 사용자 식별자는 인증 객체의 name에 문자열 id로 저장된다.
+비밀번호는 BCrypt, 전화번호는 AES-256-GCM 암호문·HMAC-SHA256 해시·뒷 4자리로 저장한다.
+
+## 실행 준비
+
+1. Supabase SQL Editor에서 `src/main/resources/db/auth-schema.sql`을 실행한다. 자동 적용은 하지 않는다.
+2. 기존 DB 환경변수와 `PHONE_ENCRYPTION_KEY`, `PHONE_HASH_KEY`를 설정한다. 각각 별도로 생성한 32바이트 키의 Base64 문자열을 사용한다. DB와 분리 보관한다. 기존 전화번호 해시와 키·정규화 방식의 호환성을 팀과 맞춰야 한다.
+3. 시연에서는 `SPRING_PROFILES_ACTIVE=demo`를 설정한다. 문자를 발송하지 않으며 인증번호는 `123456`이다. 운영에서는 demo를 사용하지 않고 `SmsSender` 구현을 제공해야 한다.
+4. 로컬 HTTP에서는 `SESSION_COOKIE_SECURE=false`를 설정한다. HTTPS 환경의 기본값은 true다.
+
+프런트와 API가 같은 사이트에서 제공되는 구성을 기준으로 한다. 개발 시 프런트 프록시를 사용한다. 다른 출처를 사용할 경우 정확한 프런트 주소에 대한 CORS·쿠키 설정이 추가로 필요하다.
+
+## 호출 순서
+
+모든 요청에 세션 쿠키를 유지한다. 브라우저 fetch에서는 `credentials: 'include'`를 사용한다.
+먼저 `GET /auth/csrf`를 호출한다. 응답의 `headerName`을 헤더 이름으로, `token`을 값으로 사용해 POST 요청을 보낸다.
+가입·로그인·로그아웃 후 CSRF 토큰을 다시 받는다.
+
+| 메서드 | 경로 | 요청·응답 |
+| --- | --- | --- |
+| GET | /auth/csrf | CSRF token, headerName, parameterName |
+| POST | /auth/phone/send | `{ "phone": "010-1234-5678" }` → verificationId, expiresAt |
+| POST | /auth/phone/verify | `{ "verificationId": 1, "phone": "01012345678", "code": "123456" }` → 200 |
+| POST | /auth/signup | `{ "email": "fan@example.com", "password": "password123", "phone": "01012345678", "verificationId": 1, "privacyConsent": true }` → 자동 로그인, id·email·phoneLast4 |
+| POST | /auth/login | `{ "email": "fan@example.com", "password": "password123" }` → 로그인, id·email·phoneLast4 |
+| PATCH | /me/password | `{ "currentPassword": "old12345", "newPassword": "new12345", "confirmPassword": "new12345" }` → 완료 메시지 |
+| GET | /me | 로그인 사용자의 id·email·phoneLast4 |
+| POST | /auth/logout | 세션 무효화, 204 |
+
+인증 발송·확인·가입은 같은 브라우저 세션에서 수행해야 한다. 다른 세션의 인증 결과는 사용할 수 없다.
+인증은 3분 유효하고 재전송은 60초 간격이다. 오입력 5회 후 재전송이 필요하다. 재전송은 기존 코드를 대체한다.
+가입은 서버에 저장된 인증 완료·전화번호 일치·유효기간·미사용 여부를 확인한다. 중복 가입은 DB 고유 제약으로도 차단한다.
+인증 완료 후 가입까지 3분 유효기간을 적용한다. 화면의 다시 인증하기는 입력을 초기화하고 새 코드 요청으로 이어진다.
+오류 응답은 `{ "message": "..." }`다. 인증·인가 필터의 401·403은 HTTP 상태로 처리한다.
+로그인·가입 성공 후 홈 또는 원래 화면으로 이동하는 처리는 프런트가 보관한 내부 경로를 사용한다.
+만 14세 확인은 디자인에 있지만 최신 화면별 기능표의 가입 필수항목에는 없어 이번 API에서 별도 필드로 요구하지 않는다.
+
+## 검증
+
+`bash gradlew test --tests 'com.trueket.backend.user.AuthFlowTests'`
+
+H2 테스트 DB에서 인증 필수, 오입력 제한, 재발송 간격, 만료, 동의 필수, 인증 재사용 차단, 비밀번호 검증, 자동 로그인·세션 유지·로그아웃·CSRF를 확인한다.
+실제 Supabase와 문자 업체 연동은 별도 환경 검증이 필요하다.
