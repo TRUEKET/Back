@@ -1,0 +1,141 @@
+{
+  "type": "object",
+  "properties": {
+    "readable": {
+      "type": "boolean"
+    },
+    "detected_type": {
+      "type": "string",
+      "enum": [
+        "transfer",
+        "aom",
+        "proxy",
+        "cancel",
+        "etc"
+      ]
+    },
+    "type_mismatch": {
+      "type": "boolean"
+    },
+    "sentences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "speaker": {
+            "type": "string",
+            "enum": [
+              "SELLER",
+              "BUYER",
+              "UNKNOWN"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "image_index": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "id",
+          "speaker",
+          "text",
+          "image_index"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sentence_id": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sentence_id",
+          "quote",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "extracted": {
+      "type": "object",
+      "properties": {
+        "accounts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "phones": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "x_accounts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "accounts",
+        "phones",
+        "x_accounts",
+        "links"
+      ],
+      "additionalProperties": false
+    },
+    "other_suspicious": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sensitive_values": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "readable",
+    "detected_type",
+    "type_mismatch",
+    "sentences",
+    "signals",
+    "extracted",
+    "other_suspicious",
+    "sensitive_values"
+  ],
+  "additionalProperties": false
+}
