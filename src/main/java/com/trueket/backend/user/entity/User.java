@@ -27,7 +27,7 @@ public class User {
     @Column(name = "phone_hash", nullable = false, unique = true)
     private String phoneHash;
 
-    @Column(name = "phone_enc", nullable = false)
+    @Column(name = "phone_enc", nullable = false, columnDefinition = "text")
     private String phoneEnc;
 
     @JdbcTypeCode(Types.CHAR)
@@ -46,10 +46,67 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
+    @Column(name = "privacy_agreed_at")
+    private OffsetDateTime privacyAgreedAt;
+
+    public void agreePrivacy(OffsetDateTime agreedAt) {
+        this.privacyAgreedAt = agreedAt;
+    }
+
+    public static User create(
+            String email,
+            String passwordHash,
+            String phoneHash,
+            String phoneEnc,
+            String phoneLast4,
+            OffsetDateTime phoneVerifiedAt
+    ) {
+        User user = new User();
+        user.email = email;
+        user.passwordHash = passwordHash;
+        user.changePhone(phoneHash, phoneEnc, phoneLast4, phoneVerifiedAt);
+        user.status = "ACTIVE";
+        return user;
+    }
+
+    public void changePassword(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public void changePhone(
+            String phoneHash,
+            String phoneEnc,
+            String phoneLast4,
+            OffsetDateTime phoneVerifiedAt
+    ) {
+        if (phoneVerifiedAt == null) {
+            throw new IllegalArgumentException("휴대폰 인증이 필요합니다.");
+        }
+        if (phoneLast4 == null || !phoneLast4.matches("[0-9]{4}")) {
+            throw new IllegalArgumentException("휴대폰 뒷자리는 숫자 4자리여야 합니다.");
+        }
+        this.phoneHash = phoneHash;
+        this.phoneEnc = phoneEnc;
+        this.phoneLast4 = phoneLast4;
+        this.phoneVerifiedAt = phoneVerifiedAt;
+    }
+
+    @PrePersist
+    private void initializeTimestamps() {
+        OffsetDateTime now = OffsetDateTime.now();
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    @PreUpdate
+    private void updateTimestamp() {
+        this.updatedAt = OffsetDateTime.now();
+    }
+
     public void changeStatus(String status) {
-        if (!status.equals("ACTIVE")
-                && !status.equals("RESTRICTED")
-                && !status.equals("WITHDRAWN")) {
+        if (!"ACTIVE".equals(status)
+                && !"RESTRICTED".equals(status)
+                && !"WITHDRAWN".equals(status)) {
             throw new IllegalArgumentException("올바르지 않은 회원 상태입니다.");
         }
 
