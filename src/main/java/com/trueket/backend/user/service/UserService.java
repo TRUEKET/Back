@@ -2,6 +2,10 @@ package com.trueket.backend.user.service;
 
 import com.trueket.backend.global.exception.ApiException;
 import com.trueket.backend.user.dto.PasswordChangeRequest;
+import com.trueket.backend.user.dto.PhoneChangeRequest;
+import com.trueket.backend.user.dto.AccountResponse;
+import com.trueket.backend.user.dto.AuthDtos.UserResponse;
+import java.time.OffsetDateTime;
 import com.trueket.backend.user.entity.User;
 import com.trueket.backend.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -15,10 +19,38 @@ import java.nio.charset.StandardCharsets;
 public class UserService {
     private final UserRepository users;
     private final PasswordEncoder passwords;
+    private final PhonePrivacy privacy;
+    private final AuthService auth;
 
-    public UserService(UserRepository users, PasswordEncoder passwords) {
+    public UserService(UserRepository users, PasswordEncoder passwords, PhonePrivacy privacy, AuthService auth) {
         this.users = users;
         this.passwords = passwords;
+        this.privacy = privacy;
+        this.auth = auth;
+    }
+
+    @Transactional(readOnly = true)
+    public AccountResponse account(Long id) {
+        User user = users.findById(id)
+                .filter(value -> "ACTIVE".equals(value.getStatus()))
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."));
+        return new AccountResponse(user.getId(), user.getEmail(), privacy.decrypt(user.getPhoneEnc()));
+    }
+
+    @Transactional
+    public UserResponse changePhone(Long id, PhoneChangeRequest input, OffsetDateTime expectedExpiry) {
+        User user = users.findForUpdateById(id)
+                .filter(value -> "ACTIVE".equals(value.getStatus()))
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."));
+        String phone = privacy.normalize(input.phone());
+        String hash = privacy.hash(phone);
+        if (users.existsByPhoneHashAndIdNot(hash, id)) {
+            throw invalid("다른 계정에 등록된 번호예요");
+        }
+        OffsetDateTime verifiedAt = auth.consumePhoneChange(id, input, expectedExpiry);
+        user.changePhone(hash, privacy.encrypt(phone), phone.substring(7), verifiedAt);
+        users.flush();
+        return UserResponse.from(user);
     }
 
     @Transactional

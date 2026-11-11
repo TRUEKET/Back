@@ -15,7 +15,7 @@ Spring Security 서버 세션을 사용한다. 사용자 식별자는 인증 객
 ## 호출 순서
 
 모든 요청에 세션 쿠키를 유지한다. 브라우저 fetch에서는 `credentials: 'include'`를 사용한다.
-먼저 `GET /auth/csrf`를 호출한다. 응답의 `headerName`을 헤더 이름으로, `token`을 값으로 사용해 POST 요청을 보낸다.
+먼저 `GET /auth/csrf`를 호출한다. 응답의 `headerName`을 헤더 이름으로, `token`을 값으로 사용해 POST·PATCH 요청을 보낸다.
 가입·로그인·로그아웃 후 CSRF 토큰을 다시 받는다.
 
 | 메서드 | 경로 | 요청·응답 |
@@ -26,6 +26,10 @@ Spring Security 서버 세션을 사용한다. 사용자 식별자는 인증 객
 | POST | /auth/signup | `{ "email": "fan@example.com", "password": "password123", "phone": "01012345678", "verificationId": 1, "privacyConsent": true }` → 자동 로그인, id·email·phoneLast4 |
 | POST | /auth/login | `{ "email": "fan@example.com", "password": "password123" }` → 로그인, id·email·phoneLast4 |
 | PATCH | /me/password | `{ "currentPassword": "old12345", "newPassword": "new12345", "confirmPassword": "new12345" }` → 완료 메시지 |
+| GET | /me/account | 계정 수정용 id·email·전체 phone. Cache-Control no-store |
+| POST | /me/phone/send | `{ "phone": "010-9876-5432" }` → verificationId, expiresAt |
+| POST | /me/phone/verify | `{ "phone": "01098765432", "verificationId": 2, "code": "123456" }` → 인증 완료 메시지 |
+| PATCH | /me/phone | `{ "phone": "01098765432", "verificationId": 2 }` → id·email·갱신된 phoneLast4 |
 | GET | /me | 로그인 사용자의 id·email·phoneLast4 |
 | POST | /auth/logout | 세션 무효화, 204 |
 
@@ -43,3 +47,17 @@ Spring Security 서버 세션을 사용한다. 사용자 식별자는 인증 객
 
 H2 테스트 DB에서 인증 필수, 오입력 제한, 재발송 간격, 만료, 동의 필수, 인증 재사용 차단, 비밀번호 검증, 자동 로그인·세션 유지·로그아웃·CSRF를 확인한다.
 실제 Supabase와 문자 업체 연동은 별도 환경 검증이 필요하다.
+
+## 내 계정 조회·번호 변경
+
+기존 팀 DB에는 `src/main/resources/db/phone-change-schema.sql`도 적용한다. 기존 목적 SIGNUP·REPORT를 유지하고 `PHONE_CHANGE:<사용자 id>`를 허용한다. 목적 길이는 40자로 확장하고 번호·목적 중복 방지 인덱스를 만든다.
+
+홈·모달은 `/me`의 뒷 4자리를 사용하고, 전체 번호는 수정 화면 진입 시 `/me/account`로 조회한다. 비밀번호·해시·암호문은 반환하지 않는다. 기존 테스트 데이터의 임의 암호문은 복호화할 수 없으므로 가입 API로 만든 계정을 사용한다.
+
+번호 변경은 로그인 상태에서 send → verify → PATCH 순서로 호출한다. 인증 확인만으로 번호는 바뀌지 않고 저장하기에서 PATCH를 호출해야 한다. 가입과 같은 demo 방식·3분 만료·60초 재발송·5회 오입력 제한을 사용한다. 실제 SMS 연동은 후속 범위다.
+
+인증은 로그인 사용자와 브라우저 세션에 연결되고 가입 인증과 분리된다. 다른 브라우저에서 재발급되면 이전 인증 결과도 무효가 된다. 저장 시 다른 계정의 번호인지 다시 검사하고, 성공한 인증은 재사용할 수 없다. 같은 번호의 다른 사용자 동시 저장은 users.phone_hash 고유 제약으로도 보호한다.
+
+저장 응답의 phoneLast4로 홈 헤더를 갱신하거나 `/me`를 다시 조회한다. 기존 신고의 reporter_hash는 신고 당시 값이므로 번호 변경에서 일괄 수정하지 않는다.
+
+Supabase 트랜잭션 풀러(6543)의 JDBC 연결은 `prepareThreshold=0`을 적용한다. 서버 측 prepared statement 충돌 방지를 위한 공식 권장 설정이다. [Supabase 연결 안내](https://supabase.com/docs/guides/database/connecting-to-postgres)

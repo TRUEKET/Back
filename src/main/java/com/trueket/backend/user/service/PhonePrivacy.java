@@ -30,6 +30,21 @@ public class PhonePrivacy {
             return Base64.getEncoder().encodeToString(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
         } catch (GeneralSecurityException e) { throw new IllegalStateException(e); }
     }
+    public String decrypt(String encryptedPhone) {
+        try {
+            String[] parts = encryptedPhone.split(":", 2);
+            if (parts.length != 2) {
+                throw new IllegalStateException("저장된 전화번호 암호문 형식을 확인해 주세요.");
+            }
+            byte[] iv = Base64.getDecoder().decode(parts[0]);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(encryptionKey, "AES"), new GCMParameterSpec(128, iv));
+            return new String(cipher.doFinal(Base64.getDecoder().decode(parts[1])), StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
+            throw new IllegalStateException("전화번호를 복호화하지 못했습니다.", e);
+        }
+    }
+
     public String encrypt(String phone) {
         try {
             byte[] iv = new byte[12]; new SecureRandom().nextBytes(iv);

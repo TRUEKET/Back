@@ -14,11 +14,15 @@ public class PhoneVerification {
     @Column(name="verified_at") private OffsetDateTime verifiedAt;
     @Column(name="consumed_at") private OffsetDateTime consumedAt;
     @Column(name="attempt_count", nullable=false) private int attempts;
-    @Column(nullable=false) private String purpose;
+    @Column(nullable=false, length=40) private String purpose;
     public static PhoneVerification create(String phoneHash) {
+        return create(phoneHash, "SIGNUP");
+    }
+
+    public static PhoneVerification create(String phoneHash, String purpose) {
         PhoneVerification verification = new PhoneVerification();
         verification.phoneHash = phoneHash;
-        verification.purpose = "SIGNUP";
+        verification.purpose = purpose;
         return verification;
     }
     public void issue(String codeHash, OffsetDateTime now) {
