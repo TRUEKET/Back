@@ -59,3 +59,5 @@ H2 테스트 DB에서 인증 필수, 오입력 제한, 재발송 간격, 만료,
 인증은 로그인 사용자와 브라우저 세션에 연결되고 가입 인증과 분리된다. 다른 브라우저에서 재발급되면 이전 인증 결과도 무효가 된다. 저장 시 다른 계정의 번호인지 다시 검사하고, 성공한 인증은 재사용할 수 없다. 같은 번호의 다른 사용자 동시 저장은 users.phone_hash 고유 제약으로도 보호한다.
 
 저장 응답의 phoneLast4로 홈 헤더를 갱신하거나 `/me`를 다시 조회한다. 기존 신고의 reporter_hash는 신고 당시 값이므로 번호 변경에서 일괄 수정하지 않는다.
+
+Supabase 트랜잭션 풀러(6543)의 JDBC 연결은 `prepareThreshold=0`을 적용한다. 서버 측 prepared statement 충돌 방지를 위한 공식 권장 설정이다. [Supabase 연결 안내](https://supabase.com/docs/guides/database/connecting-to-postgres)
