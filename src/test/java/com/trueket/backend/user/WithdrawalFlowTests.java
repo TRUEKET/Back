@@ -119,8 +119,13 @@ class WithdrawalFlowTests {
     }
     private long photos(Account account,String masked,String original) {
         long id=IDS.incrementAndGet();
-        jdbc.update("insert into trueshot_requests(id,user_id) values(?,?)",id,account.user().getId());
-        jdbc.update("insert into trueshot_photos(id,request_id,masked_image,original_storage_key) values(?,?,?,?)",id,id,masked,original);
+        OffsetDateTime now=OffsetDateTime.now();
+        jdbc.update("insert into trueshot_requests(id,user_id,title,code,token,status,phase,expires_at,purge_at,fail_reasons,created_at) "
+                        + "values(?,?,'요청','ABCD',?,'PENDING','WAITING',?,?,CAST('[]' AS JSON),?)",
+                id,account.user().getId(),"withdrawal-"+id,now.plusMinutes(30),now.plusDays(7),now);
+        jdbc.update("insert into trueshot_photos(id,request_id,n,masked_image,mask_status,mask_boxes,original_storage_key,created_at) "
+                        + "values(?,?,1,?,'READY',CAST('[]' AS JSON),?,?)",
+                id,id,masked,original,now);
         return id;
     }
 

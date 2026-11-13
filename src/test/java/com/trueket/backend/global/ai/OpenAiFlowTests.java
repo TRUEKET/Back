@@ -33,6 +33,7 @@ class OpenAiFlowTests {
     static volatile boolean recover=false;
     static volatile String outputMode="completed";
     static volatile String capturedBody;
+    static volatile String responseText;
     static final HttpServer API;
     static final String EXTRACTION="""
         {"readable":true,"detected_type":"transfer","type_mismatch":false,
@@ -50,7 +51,7 @@ class OpenAiFlowTests {
                 assertEquals("Bearer fake-openai-key",exchange.getRequestHeaders().getFirst("Authorization"));
                 assertNull(exchange.getRequestHeaders().getFirst("x-goog-api-key"));
                 int status=(recover && call>1)?200:statusCode;
-                Object content=List.of(Map.of("type","output_text","text",EXTRACTION));
+                Object content=List.of(Map.of("type","output_text","text",responseText));
                 if(outputMode.equals("refusal")) content=List.of(Map.of("type","refusal","refusal","upstream private details fake-openai-key"));
                 Map<String,Object> body=Map.of("status",outputMode.equals("incomplete")?"incomplete":"completed",
                     "output",List.of(Map.of("type","reasoning","summary",List.of()),
@@ -66,7 +67,7 @@ class OpenAiFlowTests {
         properties.add("openai.base-url",()->"http://127.0.0.1:"+API.getAddress().getPort()+"/v1");
     }
     @AfterAll static void stop() { API.stop(0); }
-    @BeforeEach void reset() { CALLS.set(0);statusCode=200;recover=false;outputMode="completed";capturedBody=null; }
+    @BeforeEach void reset() { CALLS.set(0);statusCode=200;recover=false;outputMode="completed";capturedBody=null;responseText=EXTRACTION; }
     @Autowired MockMvc mvc;
     @Autowired ApplicationContext context;
 
@@ -83,6 +84,8 @@ class OpenAiFlowTests {
     @Test void selectsOnlyOpenAiAndUsesImagesStrictSchemaAndNoStore() throws Exception {
         assertEquals(1,context.getBeansOfType(AnalysisModelClient.class).size());
         assertInstanceOf(OpenAiClient.class,context.getBean(AnalysisModelClient.class));
+        assertTrue(context.getBeansOfType(GeminiClient.class).isEmpty());
+        assertNotNull(context.getBean(com.trueket.backend.trueshot.service.TrueshotOpenAiClient.class));
         analyze().andExpect(status().isOk()).andExpect(jsonPath("$.assessment.finalStage").value("DANGER"))
             .andExpect(jsonPath("$.conversations.images[0].imageNumber").value(1))
             .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("01012345678"))));
@@ -97,6 +100,21 @@ class OpenAiFlowTests {
         var image=body.path("input").get(0).path("content").get(1);
         assertEquals("input_image",image.path("type").asText());
         assertTrue(image.path("image_url").asText().startsWith("data:image/png;base64,"));
+    }
+
+    @Test void trueshotUsesOpenAiForFirstPhotoAndMaskCoordinates() throws Exception {
+        responseText="{\"codeVisible\":true,\"codeMatches\":true,\"clear\":true}";
+        var checker=context.getBean(com.trueket.backend.trueshot.service.TrueshotFirstPhotoChecker.class);
+        var result=checker.check("ABCD",new com.trueket.backend.trueshot.service.TrueshotImageInput.Prepared(new byte[]{1},"image/jpeg"));
+        assertTrue(result.passed());
+        var body=JSON.readTree(capturedBody);
+        assertEquals("trueket_trueshot",body.path("text").path("format").path("name").asText());
+        assertFalse(body.path("instructions").asText().contains("signal dictionary"));
+        assertFalse(body.path("store").asBoolean());
+        responseText="{\"complete\":true,\"boxes\":[{\"x\":0.1,\"y\":0.2,\"width\":0.2,\"height\":0.1}]}";
+        var detector=context.getBean(com.trueket.backend.trueshot.service.TrueshotMaskDetector.class);
+        assertTrue(detector.detect(new byte[]{1}).complete());
+        assertEquals(2,CALLS.get());
     }
 
     @Test void upstreamFailureRetriesOnceThenUsesServerRules() throws Exception {

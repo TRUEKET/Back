@@ -19,7 +19,7 @@ import java.util.Map;
 import static com.trueket.backend.global.ai.ModelException.Kind.*;
 
 @Component
-@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name="analysis.ai-provider", havingValue="gemini", matchIfMissing=true)
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name="analysis.ai-provider", havingValue="gemini")
 public class GeminiClient implements AnalysisModelClient {
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
