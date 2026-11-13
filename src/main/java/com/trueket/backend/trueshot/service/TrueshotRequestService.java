@@ -1,12 +1,17 @@
 package com.trueket.backend.trueshot.service;
 
 import com.trueket.backend.global.exception.ApiException;
+import com.trueket.backend.global.storage.StorageArea;
+import com.trueket.backend.global.storage.StorageTarget;
+import com.trueket.backend.global.storage.SupabaseStorageDeletion;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.RequestDetail;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.RequestSummary;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.SellerLink;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.SellerStart;
 import com.trueket.backend.trueshot.entity.TrueshotRequest;
+import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
 import com.trueket.backend.trueshot.repository.TrueshotRequestRepository;
+import com.trueket.backend.trueshot.repository.TrueshotPhotoRepository;
 import com.trueket.backend.user.entity.User;
 import com.trueket.backend.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -25,10 +30,15 @@ public class TrueshotRequestService {
     private static final String CODE_CHARACTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private final TrueshotRequestRepository requests;
     private final UserRepository users;
+    private final TrueshotPhotoRepository photos;
+    private final SupabaseStorageDeletion storageDeletion;
 
-    public TrueshotRequestService(TrueshotRequestRepository requests, UserRepository users) {
+    public TrueshotRequestService(TrueshotRequestRepository requests, UserRepository users,
+            TrueshotPhotoRepository photos, SupabaseStorageDeletion storageDeletion) {
         this.requests = requests;
         this.users = users;
+        this.photos = photos;
+        this.storageDeletion = storageDeletion;
     }
 
     @Transactional
@@ -98,6 +108,45 @@ public class TrueshotRequestService {
         }
         request.failForRequestTimeout();
         request.closeShareWindow();
+        if (request.getStatus() == TrueshotStatus.FAILED) {
+            deleteOriginals(requestId);
+        }
+    }
+
+    @Transactional
+    public void expirePhoto(Long requestId, int number) {
+        TrueshotRequest request = requests.findByIdForUpdate(requestId).orElse(null);
+        if (request == null) return;
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        if (request.isExpired(now)) {
+            request.failForRequestTimeout();
+        } else if (number == 1 && request.firstPhotoTimedOut(now)) {
+            request.failForPhotoTimeout(1);
+        } else if (number == 2 && request.secondPhotoTimedOut(now)) {
+            request.failForPhotoTimeout(2);
+        }
+        if (request.getStatus() == TrueshotStatus.FAILED) {
+            deleteOriginals(requestId);
+        }
+    }
+
+    @Transactional
+    public void cleanFailedOriginals(Long requestId) {
+        TrueshotRequest request = requests.findByIdForUpdate(requestId).orElse(null);
+        if (request != null && request.getStatus() == TrueshotStatus.FAILED) {
+            deleteOriginals(requestId);
+        }
+    }
+
+    private void deleteOriginals(Long requestId) {
+        var stored = photos.findByRequestId(requestId).stream()
+                .filter(photo -> photo.getOriginalStorageKey() != null).toList();
+        if (stored.isEmpty()) return;
+        storageDeletion.deleteAll(stored.stream()
+                .map(photo -> new StorageTarget(StorageArea.TRUESHOT_ORIGINAL, photo.getOriginalStorageKey()))
+                .toList());
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        stored.forEach(photo -> photo.markOriginalDeleted(now));
     }
 
     private User activeUser(Long userId) {

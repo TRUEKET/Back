@@ -152,4 +152,39 @@ public class TrueshotRequest {
             phase = TrueshotPhase.COMPLETED;
         }
     }
+
+    public boolean firstPhotoTimedOut(OffsetDateTime now) {
+        return phase == TrueshotPhase.FIRST_CHECKING && deadline1 != null && !now.isBefore(deadline1);
+    }
+
+    public boolean secondPhotoTimedOut(OffsetDateTime now) {
+        return phase == TrueshotPhase.SECOND_WAITING && deadline2 != null && !now.isBefore(deadline2);
+    }
+
+    public void failForPhotoTimeout(int number) {
+        if (status == TrueshotStatus.FAILED || status == TrueshotStatus.PASSED) return;
+        status = TrueshotStatus.FAILED;
+        phase = TrueshotPhase.FAILED;
+        failReasons = JsonNodeFactory.instance.arrayNode().add(number == 1
+                ? "첫 번째 사진이 시간 내에 전송되지 않음"
+                : "두 번째 사진이 시간 내에 전송되지 않음");
+    }
+
+    // 첫 번째 사진 확인 중에는 3분 제한 시간이 줄어들지 않는다.
+    public void firstPhotoRejected(OffsetDateTime receivedAt, OffsetDateTime checkedAt) {
+        if (phase != TrueshotPhase.FIRST_CHECKING) throw new IllegalStateException("첫 사진 확인 단계가 아닙니다.");
+        deadline1 = deadline1.plus(java.time.Duration.between(receivedAt, checkedAt));
+    }
+
+    public void firstPhotoAccepted(OffsetDateTime checkedAt) {
+        if (phase != TrueshotPhase.FIRST_CHECKING) throw new IllegalStateException("첫 사진 확인 단계가 아닙니다.");
+        firstVerifiedAt = checkedAt;
+        phase = TrueshotPhase.FIRST_MASKING;
+    }
+
+    public void secondPhotoReceived(OffsetDateTime receivedAt) {
+        if (phase != TrueshotPhase.SECOND_WAITING) throw new IllegalStateException("두 번째 촬영 단계가 아닙니다.");
+        secondReceivedAt = receivedAt;
+        phase = TrueshotPhase.JUDGING;
+    }
 }

@@ -31,4 +31,10 @@ public interface TrueshotRequestRepository extends JpaRepository<TrueshotRequest
 
     List<TrueshotRequest> findByExpiresAtLessThanEqualAndPhaseIn(
             OffsetDateTime expiresAt, Collection<TrueshotPhase> phases);
+
+    List<TrueshotRequest> findByPhaseAndDeadline1LessThanEqual(
+            TrueshotPhase phase, OffsetDateTime deadline);
+
+    List<TrueshotRequest> findByPhaseAndDeadline2LessThanEqual(
+            TrueshotPhase phase, OffsetDateTime deadline);
 }

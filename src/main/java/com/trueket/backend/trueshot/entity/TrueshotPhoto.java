@@ -74,4 +74,13 @@ public class TrueshotPhoto {
         photo.createdAt = now;
         return photo;
     }
+
+    public void storeOriginal(String key) {
+        originalStorageKey = key;
+    }
+
+    public void markOriginalDeleted(OffsetDateTime now) {
+        originalStorageKey = null;
+        originalDeletedAt = now;
+    }
 }
