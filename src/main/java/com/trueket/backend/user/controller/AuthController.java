@@ -19,7 +19,11 @@ import java.util.List;
 public class AuthController {
     private final AuthService auth;
     private final UserRepository users;
-    public AuthController(AuthService auth, UserRepository users) { this.auth=auth; this.users=users; }
+    private final com.trueket.backend.analyze.service.AnalysisSessionStore analyses;
+    public AuthController(AuthService auth, UserRepository users,
+                          com.trueket.backend.analyze.service.AnalysisSessionStore analyses) {
+        this.auth=auth; this.users=users; this.analyses=analyses;
+    }
     @GetMapping("/auth/csrf") public CsrfToken csrf(CsrfToken token) { return token; }
     @PostMapping("/auth/phone/send")
     public PhoneSent send(@Valid @RequestBody PhoneSend input, HttpServletRequest request, HttpServletResponse response) {
@@ -62,7 +66,16 @@ public class AuthController {
     }
 
     private UserResponse authenticate(User user, HttpServletRequest request, HttpServletResponse response) {
-        request.getSession(); request.changeSessionId();
+        var previous = SecurityContextHolder.getContext().getAuthentication();
+        var session = request.getSession();
+        if (previous != null && previous.isAuthenticated()
+                && !(previous instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && !previous.getName().equals(user.getId().toString())) {
+            Object owner = session.getAttribute("analysisOwner");
+            if (owner instanceof java.util.UUID id) analyses.deleteByOwner(id);
+            session.removeAttribute("analysisOwner");
+        }
+        request.changeSessionId();
         var context=SecurityContextHolder.createEmptyContext();
         context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(user.getId().toString(), null, List.of()));
         SecurityContextHolder.setContext(context);

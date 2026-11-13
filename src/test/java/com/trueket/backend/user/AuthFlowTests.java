@@ -73,7 +73,7 @@ class AuthFlowTests {
         org.mockito.Mockito.when(mockAuth.send(org.mockito.ArgumentMatchers.any()))
             .thenReturn(new PhoneSent(1L, java.time.OffsetDateTime.now().plusMinutes(3), null));
         var standalone = org.springframework.test.web.servlet.setup.MockMvcBuilders
-            .standaloneSetup(new com.trueket.backend.user.controller.AuthController(mockAuth, users)).build();
+            .standaloneSetup(new com.trueket.backend.user.controller.AuthController(mockAuth, users, new com.trueket.backend.analyze.service.AnalysisSessionStore())).build();
         standalone.perform(post("/auth/phone/send").contentType("application/json").content("{\"phone\":\"01081815555\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.demoSms").doesNotExist())
             .andExpect(jsonPath("$.code").doesNotExist());
