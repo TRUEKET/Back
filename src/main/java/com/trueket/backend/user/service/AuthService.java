@@ -24,6 +24,7 @@ import java.util.UUID;
 @Service
 public class AuthService {
     private static final String SIGNUP = "SIGNUP";
+    private static final SecureRandom RANDOM = new SecureRandom();
     private final UserRepository users;
     private final PhoneVerificationRepository verifications;
     private final PhonePrivacy privacy;
@@ -124,11 +125,16 @@ public class AuthService {
         if (verification.getSentAt() != null && verification.getSentAt().plusSeconds(60).isAfter(now)) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "인증번호는 1분 뒤 다시 받아 주세요");
         }
-        String code = demo ? "123456" : String.format("%06d", new SecureRandom().nextInt(1000000));
+        String code;
+        do {
+            code = String.format(java.util.Locale.ROOT, "%06d", RANDOM.nextInt(1000000));
+        } while (codeHash(verification, code).equals(verification.getCodeHash()));
         verification.issue(codeHash(verification, code), now);
         verifications.saveAndFlush(verification);
         sms.send(phone, code);
-        return new PhoneSent(verification.getId(), verification.getExpiresAt());
+        DemoSms receipt = demo ? new DemoSms("010-****-" + phone.substring(7), code,
+                "시연용 문자 수신함입니다. 실제 문자는 발송되지 않으며 휴대폰 소유 여부를 확인하지 않습니다.") : null;
+        return new PhoneSent(verification.getId(), verification.getExpiresAt(), receipt);
     }
 
     private void verify(PhoneVerify input, String purpose, OffsetDateTime expectedExpiry) {

@@ -44,7 +44,8 @@ public class UserController {
 
     @PostMapping("/phone/send")
     public PhoneSent sendPhone(Authentication authentication, @Valid @RequestBody PhoneSend input,
-                               HttpServletRequest request) {
+                               HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
         Long id = userId(authentication);
         PhoneSent sent = auth.sendPhoneChange(id, input);
         request.getSession().setAttribute(PHONE_REQUEST, new PhoneChangeSession(id, sent.verificationId(), sent.expiresAt()));
