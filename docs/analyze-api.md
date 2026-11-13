@@ -32,3 +32,30 @@ IntelliJ BackendApplication의 환경 변수에 `GEMINI_API_KEY`를 추가한다
 - https://ai.google.dev/gemini-api/docs/interactions-breaking-changes-may-2026
 - https://ai.google.dev/gemini-api/docs/structured-output
 - https://ai.google.dev/gemini-api/terms
+
+## JD-04 판독 결과 피드백
+
+`POST /analyze/{analyzeId}/feedback`에 JSON `{"kind":"HELPFUL"}`(도움이 되었어요) 또는 `{"kind":"INCORRECT"}`(결과가 이상해요)를 보낸다. 로그인은 필요 없지만 판독을 수행한 브라우저의 쿠키와 `/auth/csrf`에서 받은 CSRF 헤더가 필요하다. 클라이언트는 `/analyze` 응답의 analyzeId를 그대로 사용한다.
+
+- 성공: 201, `Cache-Control: no-store`, `{"message":"소중한 의견 감사합니다"}`. 누른 버튼을 선택 상태로 표시하고 두 피드백 버튼을 비활성화한다.
+- 같은 판독의 두 번째 제출(종류 변경 포함): 409. 한 판독당 한 번이며 수정 API는 없다.
+- 다른 브라우저, 알 수 없는 ID, 삭제·교체·15분 만료된 판독: 404. 읽기 실패 결과에는 analyzeId가 없으므로 제출할 수 없다.
+- 종류 누락·잘못된 종류: 400. CSRF 누락: 403.
+
+기존 `public.feedback`에 id(bigint), analyze_id(uuid), kind(varchar), created_at(timestamptz)만 저장한다. 사용자 ID·전화번호·이메일·대화·캡처·모델 응답은 저장하지 않는다. 판독 세션을 삭제해도 이미 저장된 익명 피드백은 유지한다. 실제 팀 테이블의 컬럼과 제약은 읽기 전용으로 확인했으며 이번 기능은 DB 변경을 요구하지 않는다.
+
+중복 제출 검사는 현재 메모리 판독 세션 저장소의 잠금 안에서 DB 트랜잭션 커밋까지 수행한다. 같은 프로세스의 동시 요청은 하나만 저장된다. 현재 구조에서는 다른 프로세스가 해당 판독 세션을 갖고 있지 않아 제출할 수 없다. 추후 판독 세션을 여러 서버가 공유하도록 바꾸면 DB의 analyze_id 고유 제약과 분산 동시성 처리도 함께 추가해야 한다.
+
+### 팀 검토 목록
+
+`INCORRECT` 행이 팀 검토 대상이다. 서버 내부에서는 `FeedbackRepository.findByKindOrderByCreatedAtDescIdDesc(INCORRECT, pageable)`로 페이지 단위 조회한다. 공개 검토 목록 API는 제공하지 않는다. 팀 Supabase SQL Editor에서 다음 읽기 전용 쿼리로 확인할 수 있다.
+
+```sql
+SELECT id, analyze_id, kind, created_at
+FROM public.feedback
+WHERE kind = 'INCORRECT'
+ORDER BY created_at DESC, id DESC
+LIMIT 100;
+```
+
+대화는 저장하지 않으므로 이 목록만으로 원래 대화를 재현할 수 없다. 팀이 별도로 수집한 합성 테스트 사례로 판정 규칙을 검토한다.
