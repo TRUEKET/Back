@@ -66,6 +66,14 @@ public class AnalysisSessionStore {
         bytes -= entries.remove(id).size();
     }
 
+    public synchronized void deleteByOwner(UUID owner) {
+        var iterator = entries.values().iterator();
+        while (iterator.hasNext()) {
+            Entry entry=iterator.next();
+            if (entry.owner().equals(owner)) { bytes-=entry.size(); iterator.remove(); }
+        }
+    }
+
     @Scheduled(fixedDelay = 60000)
     public synchronized void purge() {
         Instant now = Instant.now(clock);

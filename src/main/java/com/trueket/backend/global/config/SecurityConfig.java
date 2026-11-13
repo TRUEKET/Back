@@ -7,7 +7,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @Configuration
 public class SecurityConfig {
     @Bean PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
-    @Bean SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    @Bean SecurityFilterChain securityFilterChain(HttpSecurity http, com.trueket.backend.user.repository.UserRepository users) throws Exception {
+        http.addFilterBefore(new ActiveUserFilter(users), org.springframework.security.web.access.intercept.AuthorizationFilter.class);
         http.authorizeHttpRequests(auth -> auth
             .requestMatchers("/auth/**", "/analyze", "/analyze/**", "/lookup", "/lookup/**", "/s/**", "/error").permitAll()
             .anyRequest().authenticated());
