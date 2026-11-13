@@ -110,19 +110,19 @@ Supabase 트랜잭션 풀러(6543)의 JDBC 연결은 `prepareThreshold=0`을 적
 
 ### Storage 연결 계약
 
-2026-11-13 읽기 전용 조회 시 팀 Storage에는 버킷이 없었으며 실제 파일 삭제 검증은 수행하지 않았다. 업로드 담당자와 아래 값을 확정한 뒤 백엔드 환경변수로 설정해야 한다. 코드는 기본 버킷명을 추측하지 않는다.
+2026-11-13 팀 Storage의 `report-evidence`와 `trueshot-photos`가 생성됐으며 둘 다 Private인 것을 읽기 전용으로 확인했다(#24). 팀이 확정한 버킷명을 코드 기본값에 반영했다. 실제 파일 삭제 검증은 서버용 Storage 키를 설정한 뒤 별도로 진행해야 한다.
 
 | 환경변수 | 값 |
 | --- | --- |
 | SUPABASE_URL | 팀 프로젝트 URL (`https://프로젝트.supabase.co`) |
 | SUPABASE_SERVICE_ROLE_KEY | 서버 전용 service_role 키. DB 비밀번호·anon 키와 다름 |
-| EVIDENCE_STORAGE_BUCKET | 신고 증빙 파일 버킷 |
-| TRUESHOT_MASKED_STORAGE_BUCKET | 트루샷 가린 사진 버킷 |
-| TRUESHOT_ORIGINAL_STORAGE_BUCKET | 트루샷 임시 원본 버킷 |
+| EVIDENCE_STORAGE_BUCKET | report-evidence (기본값) |
+| TRUESHOT_MASKED_STORAGE_BUCKET | trueshot-photos (기본값) |
+| TRUESHOT_ORIGINAL_STORAGE_BUCKET | trueshot-photos (기본값) |
 
-세 버킷을 동일하게 설정하는 것도 가능하다. service_role 키는 프런트에 전달하거나 Git에 넣지 않는다. 파일이 하나도 없는 계정은 Storage 설정 없이 탈퇴할 수 있다. 파일 참조가 있다면 설정이 빠졌을 때 503으로 중단한다.
+트루샷 원본과 가린 사진은 동일한 버킷을 사용하고 파일별 UUID로 구분한다. 기본 버킷명을 그대로 사용하면 버킷 환경변수 세 개는 생략할 수 있다. SUPABASE_URL과 SUPABASE_SERVICE_ROLE_KEY는 별도 설정이 필요하다. service_role 키는 프런트에 전달하거나 Git에 넣지 않는다. 파일이 하나도 없는 계정은 Storage 설정 없이 탈퇴할 수 있다. 파일 참조가 있다면 설정이 빠졌을 때 503으로 중단한다.
 
-파일 키 계약: `evidence.storage_key`, `trueshot_photos.masked_image`, `trueshot_photos.original_storage_key`에 **버킷을 제외한 상대 파일 키**(예: `user-42/request-3/masked-1.png`)를 저장한다. `masked_image`에 URL을 넣기로 정한다면 삭제 어댑터도 함께 변경해야 한다. 현재는 URL·빈 키·경로 이동·와일드카드·퍼센트 인코딩을 거절하며, null 사진 필드는 파일이 없는 것으로 처리한다. 하나의 파일 키를 서로 다른 사용자에게 공유하지 않는다. 업로드 처리자는 탈퇴와 경합한 업로드가 DB 저장에 실패하면 해당 임시 파일을 정리해야 한다.
+파일 키 계약: `evidence.storage_key`에는 `reports/{reportId}/{uuid}.{ext}`, `trueshot_photos.masked_image`와 `trueshot_photos.original_storage_key`에는 `trueshots/{requestId}/{uuid}.{ext}` 형식의 **버킷을 제외한 상대 파일 키**를 저장한다. 원본 파일명을 사용하지 않고 URL은 저장하지 않는다. 현재는 URL·빈 키·경로 이동·와일드카드·퍼센트 인코딩을 거절하며, null 사진 필드는 파일이 없는 것으로 처리한다. 하나의 파일 키를 서로 다른 사용자에게 공유하지 않는다. 업로드 처리자는 탈퇴와 경합한 업로드가 DB 저장에 실패하면 해당 임시 파일을 정리해야 한다.
 
 DB 행만 지워서는 실제 Storage 파일이 삭제되지 않는다. 이 기능은 Supabase의 버킷별 DELETE API에 정확한 파일 키를 보내며 storage.objects를 SQL로 삭제하지 않는다. 파일 삭제 요청은 100개 단위·5초 제한이다. [Supabase 파일 삭제 안내](https://supabase.com/docs/guides/storage/management/delete-objects)
 
@@ -131,3 +131,8 @@ DB 행만 지워서는 실제 Storage 파일이 삭제되지 않는다. 이 기�
 계정과 신고·트루샷 부모/사진 행을 잠근 뒤 파일을 먼저 삭제하고 DB 트랜잭션을 커밋한다. Storage 실패 시 계정·DB 참조는 남아 다음 요청에서 다시 삭제할 수 있다. 여러 파일 중 일부 삭제 후 실패하거나 파일 삭제 후 DB가 실패하면 **이미 지워진 파일은 복원되지 않는다**. DB 참조는 롤백되어 남고 재시도 시 이미 없는 객체도 멱등 삭제한다. DB와 Storage를 하나의 원자적 트랜잭션으로 묶는 구현은 아니다.
 
 단계별 상태를 영속화하는 삭제 작업 큐는 아직 없다. 요청 처리 시간은 DB 트랜잭션 30초를 기준으로 제한되며 대용량 계정은 추후 비동기 정리로 확장할 수 있다. 현재 테스트는 임시 H2와 로컬 모의 Storage를 사용한다. 팀 DB의 실제 탈퇴·실제 Storage 삭제는 실행하지 않았다.
+
+
+### 업로드와 판독의 크기 기준
+
+팀의 신고 증빙·트루샷 업로드 계약은 JPEG·PNG·WebP, 파일당 최대 5MB다. 업로드를 구현하는 각 담당 모듈에서 실제 이미지 형식과 크기를 검증해야 한다. 이 탈퇴 기능은 파일 키로 삭제만 하므로 업로드 검증을 대신하지 않는다. 대화 판독의 `/analyze` 캡처는 기존 명세인 장당 10MiB·최대 10장을 유지하며, 전역 multipart 한도를 5MB로 낮추지 않았다.

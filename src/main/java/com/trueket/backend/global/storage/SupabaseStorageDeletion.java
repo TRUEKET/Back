@@ -21,9 +21,9 @@ public class SupabaseStorageDeletion {
 
     public SupabaseStorageDeletion(@Value("${storage.supabase-url:}") String url,
             @Value("${storage.service-role-key:}") String serviceKey,
-            @Value("${storage.evidence-bucket:}") String evidence,
-            @Value("${storage.trueshot-masked-bucket:}") String masked,
-            @Value("${storage.trueshot-original-bucket:}") String original) {
+            @Value("${storage.evidence-bucket:report-evidence}") String evidence,
+            @Value("${storage.trueshot-masked-bucket:trueshot-photos}") String masked,
+            @Value("${storage.trueshot-original-bucket:trueshot-photos}") String original) {
         this.url = url.replaceAll("/+$", "");
         this.serviceKey = serviceKey;
         this.buckets = Map.of(StorageArea.EVIDENCE,evidence,StorageArea.TRUESHOT_MASKED,masked,
