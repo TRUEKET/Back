@@ -26,17 +26,20 @@ public class GeminiClient {
     private final String apiKey;
     private final String model;
     private final URI endpoint;
+    private final String thinkingLevel;
 
     public GeminiClient(@Value("${gemini.api-key:}") String apiKey,
-                        @Value("${gemini.model:gemini-3.8-flash}") String model,
-                        @Value("${gemini.base-url:https://generativelanguage.googleapis.com}") String baseUrl) {
+                        @Value("${gemini.model:gemini-3.5-flash-lite}") String model,
+                        @Value("${gemini.base-url:https://generativelanguage.googleapis.com}") String baseUrl,
+                        @Value("${gemini.thinking-level:low}") String thinkingLevel) {
+        this.thinkingLevel = thinkingLevel;
         this.apiKey = apiKey;
         this.model = model;
         this.endpoint = URI.create(baseUrl + "/v1beta/interactions");
     }
 
     public String generate(String prompt, List<Image> images, JsonNode schema, Duration timeout) {
-        if (apiKey.isBlank()) {
+        if (apiKey.isBlank() || !java.util.Set.of("minimal","low","medium","high").contains(thinkingLevel)) {
             throw new GeminiException(CONFIGURATION);
         }
         List<Map<String, Object>> input = new ArrayList<>();
@@ -47,6 +50,7 @@ public class GeminiClient {
         try {
             String body = json.writeValueAsString(Map.of(
                     "model", model, "store", false, "input", input,
+                    "generation_config", Map.of("thinking_level", thinkingLevel),
                     "response_format", Map.of("type", "text", "mime_type", "application/json", "schema", schema)));
             if (body.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 19_000_000) {
                 throw new GeminiException(INVALID_RESPONSE);

@@ -50,7 +50,7 @@ class AnalyzeApiTests {
         server.start();
         store = new AnalysisSessionStore();
         service = new AnalyzeService(new CaptureProcessor(), new AnalysisPrompt(),
-                new GeminiClient("fake-test-key", "test-model", "http://127.0.0.1:" + server.getAddress().getPort()),
+                new GeminiClient("fake-test-key", "test-model", "http://127.0.0.1:" + server.getAddress().getPort(), "low"),
                 new ModelExtractionParser(), new ChatStageService(new SignalDictionary()), new FinalStageService(),
                 new AnalysisReportLookup(), new AnalysisRedactor(), store, new ConversationDetailsService(), Duration.ofSeconds(2));
     }
@@ -77,6 +77,13 @@ class AnalyzeApiTests {
         assertThrows(ApiException.class, () -> store.get(result.analyzeId(), UUID.randomUUID()));
         var request = json.readTree(requestBody);
         assertFalse(request.get("store").booleanValue());
+        assertEquals("low",request.path("generation_config").path("thinking_level").asText());
+        var allowedIds = request.path("response_format").path("schema").path("properties")
+            .path("signals").path("items").path("properties").path("id").path("enum");
+        assertTrue(allowedIds.toString().contains("S-A2"));
+        assertFalse(allowedIds.toString().contains("sig1"));
+        assertFalse(allowedIds.toString().contains("S-E3"));
+        assertFalse(allowedIds.toString().contains("S-F2"));
         assertEquals("image", request.path("input").get(1).path("type").asText());
         assertEquals("application/json", request.path("response_format").path("mime_type").asText());
         store.delete(result.analyzeId(), owner);
@@ -141,8 +148,14 @@ class AnalyzeApiTests {
         assertEquals(3,result.conversations().images().get(0).imageNumber());
     }
 
+    @Test void unsupportedThinkingSettingFailsWithoutNetwork() {
+        var client = new GeminiClient("fake-test-key", "test", "http://127.0.0.1:1", "unsupported");
+        assertEquals(GeminiException.Kind.CONFIGURATION, assertThrows(GeminiException.class,
+                () -> client.generate("test", List.of(), json.createObjectNode(), Duration.ofSeconds(1))).kind());
+    }
+
     @Test void missingKeyFailsWithoutNetwork() {
-        var client = new GeminiClient("", "test", "http://127.0.0.1:1");
+        var client = new GeminiClient("", "test", "http://127.0.0.1:1", "low");
         assertEquals(GeminiException.Kind.CONFIGURATION, assertThrows(GeminiException.class,
                 () -> client.generate("test", List.of(), json.createObjectNode(), Duration.ofSeconds(1))).kind());
     }

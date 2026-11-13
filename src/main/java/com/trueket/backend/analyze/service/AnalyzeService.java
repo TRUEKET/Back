@@ -33,7 +33,7 @@ public class AnalyzeService {
                           ModelExtractionParser parser, ChatStageService chat, FinalStageService stages,
                           AnalysisReportLookup reports, AnalysisRedactor redactor, AnalysisSessionStore sessions,
                           ConversationDetailsService conversations,
-                          @Value("${analysis.model-timeout:15s}") Duration timeout) {
+                          @Value("${analysis.model-timeout:30s}") Duration timeout) {
         this.captures = captures;
         this.prompt = prompt;
         this.gemini = gemini;
