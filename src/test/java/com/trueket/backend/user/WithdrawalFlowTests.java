@@ -156,6 +156,27 @@ class WithdrawalFlowTests {
         assertThrows(com.trueket.backend.global.exception.ApiException.class,()->analyses.get(analysis,analysisOwner));
     }
 
+    @Test void withdrawalUsesAgreedRelativeKeysAndOneTrueshotBucket() {
+        var owner=account();
+        var report=report(owner,null);
+        String evidenceKey="reports/"+report.getId()+"/"+UUID.randomUUID()+".png";
+        evidence.saveAndFlush(Evidence.create(report,EvidenceKind.EVIDENCE_QUOTE,evidenceKey,null,OffsetDateTime.now().plusYears(1)));
+        long request=photos(owner,null,null);
+        String masked="trueshots/"+request+"/"+UUID.randomUUID()+".webp";
+        String original="trueshots/"+request+"/"+UUID.randomUUID()+".jpeg";
+        jdbc.update("update trueshot_photos set masked_image=?,original_storage_key=? where request_id=?",masked,original,request);
+        var client=new com.trueket.backend.global.storage.SupabaseStorageDeletion(
+            "http://127.0.0.1:"+STORAGE.getAddress().getPort(),"fake-service-key","report-evidence","trueshot-photos","trueshot-photos");
+        var service=new WithdrawalService(users,owned,client);
+        new org.springframework.transaction.support.TransactionTemplate(transactions).execute(status->{service.withdraw(owner.user().getId());return null;});
+        assertFalse(users.existsById(owner.user().getId()));
+        assertFalse(reports.existsById(report.getId()));
+        assertEquals(0,jdbc.queryForObject("select count(*) from trueshot_photos where request_id=?",Integer.class,request));
+        assertEquals(Set.of("/storage/v1/object/report-evidence:"+evidenceKey,
+            "/storage/v1/object/trueshot-photos:"+masked,
+            "/storage/v1/object/trueshot-photos:"+original),Set.copyOf(DELETED));
+    }
+
     @Test void storageFailureKeepsAccountRowsAndSessionAndCanRetry() throws Exception {
         var owner=account(); var report=report(owner,"retry/evidence.png");
         var browser=login(owner);
