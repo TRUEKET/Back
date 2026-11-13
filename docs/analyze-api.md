@@ -59,3 +59,47 @@ LIMIT 100;
 ```
 
 대화는 저장하지 않으므로 이 목록만으로 원래 대화를 재현할 수 없다. 팀이 별도로 수집한 합성 테스트 사례로 판정 규칙을 검토한다.
+
+## 사진별 주요 대화·근거 응답 (#18)
+
+`POST /analyze` 응답의 기존 필드는 유지하고 `conversations`를 추가한다.
+
+```json
+{
+  "conversations": {
+    "imageCount": 3,
+    "suspiciousImageCount": 1,
+    "images": [
+      {
+        "imageNumber": 3,
+        "countedSignals": [
+          {
+            "id": "S-A2",
+            "criterion": "A",
+            "strength": "STRONG",
+            "sentenceId": "s1",
+            "quote": "인증번호를 보내 주세요",
+            "reason": "인증번호를 요구하는 문장입니다"
+          }
+        ],
+        "informationalSignals": []
+      }
+    ]
+  }
+}
+```
+
+- `imageCount`: 실제 요청에 포함된 전체 캡처 수. AI가 보고한 숫자를 사용하지 않는다.
+- `suspiciousImageCount`: 서버 판정 규칙에서 채택한 countedSignals가 있는 서로 다른 사진 수. 같은 사진에 신호가 여럿이어도 한 장으로 센다.
+- `images`: 서버가 채택한 판정 근거 또는 참고용 근거가 있는 사진만 포함하며 imageNumber 오름차순이다. 신호가 없는 사진은 목록에서 빠져도 전체 imageCount에는 포함된다.
+- `imageNumber`: 업로드 순서 기준 1부터 시작한다. 프런트에서 원본 미리보기 배열의 `imageNumber - 1`에 연결한다.
+- `countedSignals`: 기존 assessment.chat.countedSignals와 같은 검증·개인정보 가림이 적용된 근거다. 강한 신호 STRONG은 빨강, 주의 CAUTION은 노랑으로 표시한다. 같은 신호의 최대 합산 횟수와 A1/F1 예외 등 기존 서버 규칙을 그대로 따른다.
+- `informationalSignals`: 아옮·대리티켓팅·취켓 대행에서 합산하지 않는 A1 등의 참고 표시다. 표시하되 판정·의심 사진 수에 더하지 않는다. 따라서 이 항목만 있는 사진은 images에 있으면서 suspiciousImageCount는 0일 수 있다.
+
+AI가 임의로 제안한 신호, 구매자 문장, 원문에 없는 인용문은 사진별 근거에도 노출하지 않는다. 근거 문장과 이유는 가린 값만 반환하며 전체 대화 텍스트나 이미지 바이트·Storage URL을 이 응답에 추가하지 않는다.
+
+프런트는 업로드할 때 캡처 순서와 로컬 미리보기를 결과 화면까지 유지한다. 결과의 ‘원본 사진 보기’는 해당 로컬 파일을 보여준다. `conversations`는 사진을 다시 다운로드하는 API가 아니다. 결과 화면 이탈 시 미리보기 URL을 해제하고 판독 DELETE를 호출한다.
+
+화면의 ‘사진 N장 중 M장에서 사기 의심 정황을 찾았어요’는 imageCount와 suspiciousImageCount를 사용한다. 참고용 A1은 별도 계정 위험 안내와 연결한다. 최종 단계가 신고 기록 때문에 올라가더라도 사진별 대화 근거는 변경하지 않는다.
+
+읽기 실패(`readable:false`)는 실제 imageCount와 0·빈 images를 반환하며 analyzeId는 없다. 읽을 수 있지만 채택된 근거가 없는 결과도 빈 images다. 화면에서는 readable을 먼저 확인한 뒤 안전 결과와 읽기 실패를 구분해야 한다.
