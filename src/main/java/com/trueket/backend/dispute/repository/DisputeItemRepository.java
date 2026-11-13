@@ -24,4 +24,6 @@ public interface DisputeItemRepository
 
     // 특정 이의제기에 연결된 모든 처리 항목 조회
     List<DisputeItem> findAllByDispute_Id(Long disputeId);
+
+    void deleteAllByReport_Id(Long reportId);
 }
