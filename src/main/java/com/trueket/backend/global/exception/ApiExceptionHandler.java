@@ -13,9 +13,13 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(Map.of("message", e.getBindingResult().getFieldErrors().get(0).getDefaultMessage()));
     }
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
-    ResponseEntity<?> uploadTooLarge(org.springframework.web.multipart.MaxUploadSizeExceededException e) {
+    ResponseEntity<?> uploadTooLarge(org.springframework.web.multipart.MaxUploadSizeExceededException e,
+                                    jakarta.servlet.http.HttpServletRequest request) {
+        String message=request.getServletPath().matches("/s/[^/]+/photo")
+                ? "사진은 5MB 이하로 올려 주세요."
+                : "사진은 한 장당 10MB 이하, 최대 10장 넣어 주세요";
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                .body(Map.of("message", "사진은 한 장당 10MB 이하, 최대 10장 넣어 주세요"));
+                .body(Map.of("message", message));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

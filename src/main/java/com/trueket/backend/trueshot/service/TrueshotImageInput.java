@@ -17,17 +17,25 @@ import java.io.IOException;
 
 @Component
 public class TrueshotImageInput {
+    public static final int MAX_BYTES = 5 * 1024 * 1024;
     public record Prepared(byte[] bytes, String mimeType) {}
 
     public Prepared prepare(MultipartFile file) {
-        if (file == null || file.isEmpty() || file.getSize() > 10L * 1024 * 1024) {
-            throw invalid("사진은 10MB 이하로 올려 주세요.");
+        if (file == null || file.isEmpty()) {
+            throw invalid("사진을 올려 주세요.");
+        }
+        if (file.getSize() > MAX_BYTES) {
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE,"사진은 5MB 이하로 올려 주세요.");
         }
         try (var source = file.getInputStream(); var input = new MemoryCacheImageInputStream(source)) {
             var readers = ImageIO.getImageReaders(input);
-            if (!readers.hasNext()) throw invalid("JPG 또는 PNG 사진을 올려 주세요.");
+            if (!readers.hasNext()) throw invalid("JPEG 또는 PNG 사진을 올려 주세요.");
             var reader = readers.next();
             try {
+                String format=reader.getFormatName().toLowerCase(java.util.Locale.ROOT);
+                if (!java.util.Set.of("jpeg","jpg","png").contains(format)) {
+                    throw invalid("JPEG 또는 PNG 사진을 올려 주세요.");
+                }
                 reader.setInput(input);
                 int width = reader.getWidth(0);
                 int height = reader.getHeight(0);
@@ -49,7 +57,7 @@ public class TrueshotImageInput {
                     graphics.dispose();
                 }
                 byte[] bytes = jpeg(rgb);
-                if (bytes.length > 6_000_000) throw invalid("사진 크기를 줄여 다시 올려 주세요.");
+                if (bytes.length > MAX_BYTES) throw invalid("사진 크기를 줄여 다시 올려 주세요.");
                 return new Prepared(bytes, "image/jpeg");
             } finally {
                 reader.dispose();
