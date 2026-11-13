@@ -129,3 +129,15 @@ IntelliJ 로컬 설정의 키를 환경변수로만 전달했다. 키를 소스�
 
 - [공식 모델 요금표](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite)
 - [공식 추론 수준 설정](https://ai.google.dev/gemini-api/docs/thinking)
+
+## 공개 신고 집계 연결 준비 (#26)
+
+`PublicReportCounts.count(identifierIds, asOf)`는 서버에서 정확히 매칭한 식별자 ID를 입력받는 내부 집계 서비스다. 외부 API가 아니며 클라이언트가 보낸 ID로 판독 결과를 바꾸지 않는다.
+
+- `created_at` 기준 최근 1년(경계 포함)부터 `asOf`까지의 `PUBLISHED` 신고만 포함한다.
+- `report_identifiers.hidden=true` 연결은 제외한다.
+- 식별자·신고 종류별 서로 다른 `reporter_hash` 수를 센다. 다른 식별자의 인원을 합치지 않는다.
+- 실제 존재하지만 신고가 없는 식별자는 0명, 존재하지 않는 ID는 결과에서 제외한다.
+- 동일 신고자가 피해 신고와 의심 제보를 모두 남기면 각 종류에서 한 번씩 센다.
+
+현재 `AnalysisReportLookup`은 여전히 식별자가 있으면 조회 불가를 반환한다. 신고 담당자의 원문 정규화·해시 계약이 확정되면 정확 매칭한 ID를 이 집계 서비스에 전달하도록 연결해야 한다. 이 변경만으로 신고 연동 전체가 완료된 것은 아니다. 실제 DB 스키마 변경은 없다.
