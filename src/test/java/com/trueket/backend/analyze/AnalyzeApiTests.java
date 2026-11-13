@@ -50,9 +50,9 @@ class AnalyzeApiTests {
         server.start();
         store = new AnalysisSessionStore();
         service = new AnalyzeService(new CaptureProcessor(), new AnalysisPrompt(),
-                new GeminiClient("fake-test-key", "test-model", "http://127.0.0.1:" + server.getAddress().getPort()),
+                new GeminiClient("fake-test-key", "test-model", "http://127.0.0.1:" + server.getAddress().getPort(), "low"),
                 new ModelExtractionParser(), new ChatStageService(new SignalDictionary()), new FinalStageService(),
-                new AnalysisReportLookup(), new AnalysisRedactor(), store, Duration.ofSeconds(2));
+                new AnalysisReportLookup(), new AnalysisRedactor(), store, new ConversationDetailsService(), Duration.ofSeconds(2));
     }
     @AfterEach void cleanup() { server.stop(0); }
 
@@ -66,6 +66,10 @@ class AnalyzeApiTests {
         UUID owner = UUID.randomUUID();
         var result = service.analyze(captures(), "", owner);
         assertTrue(result.readable());
+        assertEquals(1, result.conversations().imageCount());
+        assertEquals(1, result.conversations().suspiciousImageCount());
+        assertEquals(1, result.conversations().images().get(0).imageNumber());
+        assertEquals(result.assessment().chat().countedSignals(),result.conversations().images().get(0).countedSignals());
         assertEquals(Stage.DANGER, result.assessment().finalStage());
         assertFalse(json.writeValueAsString(result).contains("01012345678"));
         assertNotNull(result.assessment().lookupWarning());
@@ -73,6 +77,13 @@ class AnalyzeApiTests {
         assertThrows(ApiException.class, () -> store.get(result.analyzeId(), UUID.randomUUID()));
         var request = json.readTree(requestBody);
         assertFalse(request.get("store").booleanValue());
+        assertEquals("low",request.path("generation_config").path("thinking_level").asText());
+        var allowedIds = request.path("response_format").path("schema").path("properties")
+            .path("signals").path("items").path("properties").path("id").path("enum");
+        assertTrue(allowedIds.toString().contains("S-A2"));
+        assertFalse(allowedIds.toString().contains("sig1"));
+        assertFalse(allowedIds.toString().contains("S-E3"));
+        assertFalse(allowedIds.toString().contains("S-F2"));
         assertEquals("image", request.path("input").get(1).path("type").asText());
         assertEquals("application/json", request.path("response_format").path("mime_type").asText());
         store.delete(result.analyzeId(), owner);
@@ -85,6 +96,9 @@ class AnalyzeApiTests {
         assertFalse(result.readable());
         assertNull(result.analyzeId());
         assertNull(result.assessment());
+        assertEquals(1,result.conversations().imageCount());
+        assertEquals(0,result.conversations().suspiciousImageCount());
+        assertTrue(result.conversations().images().isEmpty());
         assertEquals(1, requests.get());
     }
 
@@ -125,8 +139,23 @@ class AnalyzeApiTests {
         assertThrows(GeminiException.class, () -> parser.parse(VALID + " {}", 1));
     }
 
+    @Test void actualUploadCountAndModelImageNumbersReachApiResponse() throws Exception {
+        modelOutput = VALID.replace("\"image_index\":1", "\"image_index\":3");
+        var one = captures().get(0);
+        var result = service.analyze(List.of(one,one,one), "", UUID.randomUUID());
+        assertEquals(3,result.conversations().imageCount());
+        assertEquals(1,result.conversations().suspiciousImageCount());
+        assertEquals(3,result.conversations().images().get(0).imageNumber());
+    }
+
+    @Test void unsupportedThinkingSettingFailsWithoutNetwork() {
+        var client = new GeminiClient("fake-test-key", "test", "http://127.0.0.1:1", "unsupported");
+        assertEquals(GeminiException.Kind.CONFIGURATION, assertThrows(GeminiException.class,
+                () -> client.generate("test", List.of(), json.createObjectNode(), Duration.ofSeconds(1))).kind());
+    }
+
     @Test void missingKeyFailsWithoutNetwork() {
-        var client = new GeminiClient("", "test", "http://127.0.0.1:1");
+        var client = new GeminiClient("", "test", "http://127.0.0.1:1", "low");
         assertEquals(GeminiException.Kind.CONFIGURATION, assertThrows(GeminiException.class,
                 () -> client.generate("test", List.of(), json.createObjectNode(), Duration.ofSeconds(1))).kind());
     }

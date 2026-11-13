@@ -30,10 +30,32 @@ public class UserController {
     private static final String PHONE_VERIFIED = "phoneChangeVerified";
     private final UserService users;
     private final AuthService auth;
+    private final com.trueket.backend.user.service.WithdrawalService withdrawal;
+    private final com.trueket.backend.analyze.service.AnalysisSessionStore analyses;
 
-    public UserController(UserService users, AuthService auth) {
+    public UserController(UserService users, AuthService auth,
+            com.trueket.backend.user.service.WithdrawalService withdrawal,
+            com.trueket.backend.analyze.service.AnalysisSessionStore analyses) {
         this.users = users;
         this.auth = auth;
+        this.withdrawal = withdrawal;
+        this.analyses = analyses;
+    }
+
+    @DeleteMapping
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void withdraw(Authentication authentication, HttpServletRequest request,
+                         jakarta.servlet.http.HttpServletResponse response) {
+        withdrawal.withdraw(userId(authentication));
+        var session = request.getSession(false);
+        if (session != null && session.getAttribute("analysisOwner") instanceof java.util.UUID owner) {
+            analyses.deleteByOwner(owner);
+        }
+        new org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler()
+            .logout(request,response,authentication);
+        new org.springframework.security.web.authentication.logout.CookieClearingLogoutHandler("JSESSIONID")
+            .logout(request,response,authentication);
+        response.setHeader("Cache-Control","no-store");
     }
 
     @GetMapping("/account")
@@ -44,7 +66,8 @@ public class UserController {
 
     @PostMapping("/phone/send")
     public PhoneSent sendPhone(Authentication authentication, @Valid @RequestBody PhoneSend input,
-                               HttpServletRequest request) {
+                               HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
         Long id = userId(authentication);
         PhoneSent sent = auth.sendPhoneChange(id, input);
         request.getSession().setAttribute(PHONE_REQUEST, new PhoneChangeSession(id, sent.verificationId(), sent.expiresAt()));

@@ -7,7 +7,7 @@ Spring Security 서버 세션을 사용한다. 사용자 식별자는 인증 객
 
 1. Supabase SQL Editor에서 `src/main/resources/db/auth-schema.sql`을 실행한다. 자동 적용은 하지 않는다.
 2. 기존 DB 환경변수와 `PHONE_ENCRYPTION_KEY`, `PHONE_HASH_KEY`를 설정한다. 각각 별도로 생성한 32바이트 키의 Base64 문자열을 사용한다. DB와 분리 보관한다. 기존 전화번호 해시와 키·정규화 방식의 호환성을 팀과 맞춰야 한다.
-3. 시연에서는 `SPRING_PROFILES_ACTIVE=demo`를 설정한다. 문자를 발송하지 않으며 인증번호는 `123456`이다. 운영에서는 demo를 사용하지 않고 `SmsSender` 구현을 제공해야 한다.
+3. 시연에서는 `SPRING_PROFILES_ACTIVE=demo`를 설정한다. 문자를 발송하지 않으며 매번 생성한 무작위 인증번호를 발송 응답의 `demoSms.code`로 확인한다. 고정 코드는 사용하지 않는다. 운영에서는 demo를 사용하지 않고 `SmsSender` 구현을 제공해야 한다.
 4. 로컬 HTTP에서는 `SESSION_COOKIE_SECURE=false`를 설정한다. HTTPS 환경의 기본값은 true다.
 
 프런트와 API가 같은 사이트에서 제공되는 구성을 기준으로 한다. 개발 시 프런트 프록시를 사용한다. 다른 출처를 사용할 경우 정확한 프런트 주소에 대한 CORS·쿠키 설정이 추가로 필요하다.
@@ -21,13 +21,13 @@ Spring Security 서버 세션을 사용한다. 사용자 식별자는 인증 객
 | 메서드 | 경로 | 요청·응답 |
 | --- | --- | --- |
 | GET | /auth/csrf | CSRF token, headerName, parameterName |
-| POST | /auth/phone/send | `{ "phone": "010-1234-5678" }` → verificationId, expiresAt |
+| POST | /auth/phone/send | `{ "phone": "010-1234-5678" }` → verificationId, expiresAt, demo 모드에서만 demoSms |
 | POST | /auth/phone/verify | `{ "verificationId": 1, "phone": "01012345678", "code": "123456" }` → 200 |
 | POST | /auth/signup | `{ "email": "fan@example.com", "password": "password123", "phone": "01012345678", "verificationId": 1, "privacyConsent": true }` → 자동 로그인, id·email·phoneLast4 |
 | POST | /auth/login | `{ "email": "fan@example.com", "password": "password123" }` → 로그인, id·email·phoneLast4 |
 | PATCH | /me/password | `{ "currentPassword": "old12345", "newPassword": "new12345", "confirmPassword": "new12345" }` → 완료 메시지 |
 | GET | /me/account | 계정 수정용 id·email·전체 phone. Cache-Control no-store |
-| POST | /me/phone/send | `{ "phone": "010-9876-5432" }` → verificationId, expiresAt |
+| POST | /me/phone/send | `{ "phone": "010-9876-5432" }` → verificationId, expiresAt, demo 모드에서만 demoSms |
 | POST | /me/phone/verify | `{ "phone": "01098765432", "verificationId": 2, "code": "123456" }` → 인증 완료 메시지 |
 | PATCH | /me/phone | `{ "phone": "01098765432", "verificationId": 2 }` → id·email·갱신된 phoneLast4 |
 | GET | /me | 로그인 사용자의 id·email·phoneLast4 |
@@ -61,3 +61,73 @@ H2 테스트 DB에서 인증 필수, 오입력 제한, 재발송 간격, 만료,
 저장 응답의 phoneLast4로 홈 헤더를 갱신하거나 `/me`를 다시 조회한다. 기존 신고의 reporter_hash는 신고 당시 값이므로 번호 변경에서 일괄 수정하지 않는다.
 
 Supabase 트랜잭션 풀러(6543)의 JDBC 연결은 `prepareThreshold=0`을 적용한다. 서버 측 prepared statement 충돌 방지를 위한 공식 권장 설정이다. [Supabase 연결 안내](https://supabase.com/docs/guides/database/connecting-to-postgres)
+
+
+## 무작위 코드와 시연용 문자 수신함
+
+`SPRING_PROFILES_ACTIVE=demo`에서 `http://localhost:8080/auth/demo`를 열면 같은 출처의 인증 API를 사용하는 테스트 화면이 열린다. 배포 시에는 백엔드 공개 URL의 `/auth/demo` 경로를 안내한다. demo 이외 프로필에는 이 컨트롤러가 등록되지 않는다. 실제 서비스 디자인을 대신하는 화면이 아니라 검증용 화면이며, 정식 프런트의 수신함 표시는 별도 연동해야 한다.
+
+가입과 번호 변경 발송 응답은 기존 verificationId·expiresAt에 아래 필드가 추가된다. 숫자는 응답 예시이며 고정 코드가 아니다.
+
+```json
+{
+  "verificationId": 1,
+  "expiresAt": "2026-11-13T10:03:00+09:00",
+  "demoSms": {
+    "maskedPhone": "010-****-5678",
+    "code": "482193",
+    "message": "시연용 문자 수신함입니다. 실제 문자는 발송되지 않으며 휴대폰 소유 여부를 확인하지 않습니다."
+  }
+}
+```
+
+프런트는 `demoSms`가 있을 때만 별도 ‘시연용 문자 수신함’을 표시한다. 코드 자동 입력·자동 인증 대신 사용자가 수신함의 코드를 직접 입력하게 한다. 새 발급 성공 시 기존 코드를 교체하고, 번호 수정·화면 이탈·가입 완료 시 화면의 코드를 지운다. 서버는 코드 평문을 DB·로그에 남기지 않으며 발송 응답에 `Cache-Control: no-store`를 적용한다. `demoSms`는 demo 이외 모드에서는 null이며 응답 JSON에서 제외한다. 실제 문자 연동 모드에서는 SmsSender가 코드를 발송하고 클라이언트에는 코드를 돌려주지 않는다.
+
+### 심사위원 확인 순서
+
+1. 시연 URL의 `/auth/demo`에 접속한다. 실제 휴대폰 소유 여부를 검증하는 환경이 아님을 확인한다.
+2. 가입되지 않은 테스트용 전화번호로 인증번호 받기를 누른다.
+3. 수신함과 다른 숫자 6자리를 입력하면 서버의 불일치 응답을 확인할 수 있다.
+4. 발급된 번호를 입력하면 인증 성공한다. 이메일·비밀번호·동의를 입력하고 가입하면 서버 세션이 발급된다. 이 페이지의 가입도 실제 테스트 DB에 계정을 만든다.
+5. 같은 번호로 60초 이내 재요청하면 제한되고, 60초 후 재발급하면 이전 코드가 무효가 된다. 3분 만료와 5회 오입력 제한도 실제 서버 규칙으로 검사한다. 재발급 코드는 직전 코드와 다르게 생성한다.
+
+### 기획 자료 설명 문구
+
+문자 발송 비용과 발신번호 등록 절차 때문에 외부 SMS 발송을 시연용 수신함으로 대체했습니다. 서버의 SecureRandom 기반 6자리 생성, HMAC 해시 검증, 3분 유효시간, 60초 재발급 제한, 5회 오입력 제한, 인증 결과에 따른 회원가입 및 번호 변경은 실제로 동작합니다. 실제 휴대폰 소유 확인을 제공하지 않으며 실제 SMS 연동 시 발송 모듈을 교체합니다.
+
+## AC-03 회원 탈퇴
+
+로그인한 사용자가 확인 모달에서 탈퇴를 선택하면 **`DELETE /me`**를 호출한다. 요청 본문은 없고 세션 쿠키와 CSRF 헤더가 필요하다. 사용자 ID는 요청에서 받지 않으며 로그인 세션의 ID만 사용한다.
+
+- 성공: 204 + no-store. 현재 세션·쿠키와 이 브라우저의 판독 메모리를 정리한다. 프런트는 사용자 상태를 초기화하고 홈으로 이동한다.
+- 로그인 없음 또는 이미 탈퇴한 계정: 401. CSRF 없음: 403.
+- 다른 계정과 공유된 파일 참조 발견: 409. 파일을 삭제하지 않고 담당자 확인이 필요하다.
+- 사진 설정 누락·잘못된 파일 키·Storage 실패·DB 실패: 503. 성공 안내와 홈 이동을 수행하지 않는다.
+
+신고·증빙 행·신고-식별자 연결·해당 신고의 이의 응답, 트루샷 요청·사진 행, 현재 휴대폰 해시의 인증 기록 및 사용자별 번호 변경 인증 기록을 삭제한다. 파일은 아래의 Storage API를 호출해 먼저 정리한다. 다른 사람의 신고·식별자·판매자의 이의 신청은 공용 데이터이므로 계정 탈퇴에서 일괄 삭제하지 않는다. 익명 판독 피드백도 사용자 ID와 연결되어 있지 않아 유지한다.
+
+다른 브라우저의 기존 로그인 세션은 다음 요청에서 DB의 ACTIVE 계정 존재 여부를 확인하고 401로 만료 처리한다. 단일 서버의 세션 목록에 의존하지 않아 서버가 여러 개여도 탈퇴 계정의 권한을 계속 허용하지 않는다.
+
+### Storage 연결 계약
+
+2026-11-13 읽기 전용 조회 시 팀 Storage에는 버킷이 없었으며 실제 파일 삭제 검증은 수행하지 않았다. 업로드 담당자와 아래 값을 확정한 뒤 백엔드 환경변수로 설정해야 한다. 코드는 기본 버킷명을 추측하지 않는다.
+
+| 환경변수 | 값 |
+| --- | --- |
+| SUPABASE_URL | 팀 프로젝트 URL (`https://프로젝트.supabase.co`) |
+| SUPABASE_SERVICE_ROLE_KEY | 서버 전용 service_role 키. DB 비밀번호·anon 키와 다름 |
+| EVIDENCE_STORAGE_BUCKET | 신고 증빙 파일 버킷 |
+| TRUESHOT_MASKED_STORAGE_BUCKET | 트루샷 가린 사진 버킷 |
+| TRUESHOT_ORIGINAL_STORAGE_BUCKET | 트루샷 임시 원본 버킷 |
+
+세 버킷을 동일하게 설정하는 것도 가능하다. service_role 키는 프런트에 전달하거나 Git에 넣지 않는다. 파일이 하나도 없는 계정은 Storage 설정 없이 탈퇴할 수 있다. 파일 참조가 있다면 설정이 빠졌을 때 503으로 중단한다.
+
+파일 키 계약: `evidence.storage_key`, `trueshot_photos.masked_image`, `trueshot_photos.original_storage_key`에 **버킷을 제외한 상대 파일 키**(예: `user-42/request-3/masked-1.png`)를 저장한다. `masked_image`에 URL을 넣기로 정한다면 삭제 어댑터도 함께 변경해야 한다. 현재는 URL·빈 키·경로 이동·와일드카드·퍼센트 인코딩을 거절하며, null 사진 필드는 파일이 없는 것으로 처리한다. 하나의 파일 키를 서로 다른 사용자에게 공유하지 않는다. 업로드 처리자는 탈퇴와 경합한 업로드가 DB 저장에 실패하면 해당 임시 파일을 정리해야 한다.
+
+DB 행만 지워서는 실제 Storage 파일이 삭제되지 않는다. 이 기능은 Supabase의 버킷별 DELETE API에 정확한 파일 키를 보내며 storage.objects를 SQL로 삭제하지 않는다. 파일 삭제 요청은 100개 단위·5초 제한이다. [Supabase 파일 삭제 안내](https://supabase.com/docs/guides/storage/management/delete-objects)
+
+### 실패·동시 처리의 범위
+
+계정과 신고·트루샷 부모/사진 행을 잠근 뒤 파일을 먼저 삭제하고 DB 트랜잭션을 커밋한다. Storage 실패 시 계정·DB 참조는 남아 다음 요청에서 다시 삭제할 수 있다. 여러 파일 중 일부 삭제 후 실패하거나 파일 삭제 후 DB가 실패하면 **이미 지워진 파일은 복원되지 않는다**. DB 참조는 롤백되어 남고 재시도 시 이미 없는 객체도 멱등 삭제한다. DB와 Storage를 하나의 원자적 트랜잭션으로 묶는 구현은 아니다.
+
+단계별 상태를 영속화하는 삭제 작업 큐는 아직 없다. 요청 처리 시간은 DB 트랜잭션 30초를 기준으로 제한되며 대용량 계정은 추후 비동기 정리로 확장할 수 있다. 현재 테스트는 임시 H2와 로컬 모의 Storage를 사용한다. 팀 DB의 실제 탈퇴·실제 Storage 삭제는 실행하지 않았다.

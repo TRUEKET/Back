@@ -28,6 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AccountFlowTests {
     private static final AtomicInteger NUMBERS = new AtomicInteger(10000);
     private static final String PASSWORD = "password123";
+    private final Map<Long, String> issuedCodes = new java.util.HashMap<>();
     private final ObjectMapper json = new ObjectMapper();
     @Autowired MockMvc mvc;
     @Autowired AuthService auth;
@@ -59,7 +60,7 @@ class AccountFlowTests {
         Browser browser = login(user);
         String replacement = nextPhone();
         long verificationId = send(browser, replacement);
-        verify(browser, replacement, verificationId, "123456").andExpect(status().isOk());
+        verify(browser, replacement, verificationId, issuedCodes.get(verificationId)).andExpect(status().isOk());
         mvc.perform(get("/me/account").session(browser.session()))
                 .andExpect(jsonPath("$.phone").value(original));
         save(browser, replacement, verificationId).andExpect(status().isOk())
@@ -86,7 +87,7 @@ class AccountFlowTests {
         String replacement = nextPhone();
         long verificationId = send(browser, replacement);
         save(browser, replacement, verificationId).andExpect(status().isBadRequest());
-        verify(browser, replacement, verificationId, "123456").andExpect(status().isOk());
+        verify(browser, replacement, verificationId, issuedCodes.get(verificationId)).andExpect(status().isOk());
         save(browser, nextPhone(), verificationId).andExpect(status().isBadRequest());
         save(browser, replacement, verificationId).andExpect(status().isOk());
     }
@@ -99,9 +100,9 @@ class AccountFlowTests {
         Browser otherUser = login(signup(nextPhone()));
         String replacement = nextPhone();
         long verificationId = send(first, replacement);
-        verify(second, replacement, verificationId, "123456").andExpect(status().isBadRequest());
-        verify(otherUser, replacement, verificationId, "123456").andExpect(status().isBadRequest());
-        verify(first, replacement, verificationId, "123456").andExpect(status().isOk());
+        verify(second, replacement, verificationId, issuedCodes.get(verificationId)).andExpect(status().isBadRequest());
+        verify(otherUser, replacement, verificationId, issuedCodes.get(verificationId)).andExpect(status().isBadRequest());
+        verify(first, replacement, verificationId, issuedCodes.get(verificationId)).andExpect(status().isOk());
         save(second, replacement, verificationId).andExpect(status().isBadRequest());
         save(otherUser, replacement, verificationId).andExpect(status().isBadRequest());
         save(first, replacement, verificationId).andExpect(status().isOk());
@@ -115,16 +116,16 @@ class AccountFlowTests {
         postJson(browser, "/me/phone/send", Map.of("phone", replacement))
                 .andExpect(status().isTooManyRequests());
         for (int attempt = 0; attempt < 5; attempt++) {
-            verify(browser, replacement, verificationId, "000000").andExpect(status().isBadRequest());
+            verify(browser, replacement, verificationId, issuedCodes.get(verificationId).equals("000000") ? "000001" : "000000").andExpect(status().isBadRequest());
         }
-        verify(browser, replacement, verificationId, "123456").andExpect(status().isBadRequest());
+        verify(browser, replacement, verificationId, issuedCodes.get(verificationId)).andExpect(status().isBadRequest());
         assertEquals(5, jdbc.queryForObject("select attempt_count from phone_verifications where id = ?",
                 Integer.class, verificationId));
         String expired = nextPhone();
         long expiredId = send(browser, expired);
         jdbc.update("update phone_verifications set expires_at = ? where id = ?",
                 OffsetDateTime.now().minusSeconds(1), expiredId);
-        verify(browser, expired, expiredId, "123456").andExpect(status().isBadRequest());
+        verify(browser, expired, expiredId, issuedCodes.get(expiredId)).andExpect(status().isBadRequest());
         mvc.perform(post("/me/phone/send").session(browser.session()).contentType("application/json")
                 .content(json.writeValueAsString(Map.of("phone", nextPhone()))))
                 .andExpect(status().isForbidden());
@@ -137,11 +138,11 @@ class AccountFlowTests {
         Browser second = login(user);
         String replacement = nextPhone();
         long verificationId = send(first, replacement);
-        verify(first, replacement, verificationId, "123456").andExpect(status().isOk());
+        verify(first, replacement, verificationId, issuedCodes.get(verificationId)).andExpect(status().isOk());
         jdbc.update("update phone_verifications set created_at = ? where id = ?",
                 OffsetDateTime.now().minusMinutes(2), verificationId);
         long reissuedId = send(second, replacement);
-        verify(second, replacement, reissuedId, "123456").andExpect(status().isOk());
+        verify(second, replacement, reissuedId, issuedCodes.get(reissuedId)).andExpect(status().isOk());
         save(first, replacement, verificationId).andExpect(status().isBadRequest());
         save(second, replacement, reissuedId).andExpect(status().isOk());
     }
@@ -151,7 +152,7 @@ class AccountFlowTests {
         Browser browser = login(signup(nextPhone()));
         String replacement = nextPhone();
         long verificationId = send(browser, replacement);
-        verify(browser, replacement, verificationId, "123456").andExpect(status().isOk());
+        verify(browser, replacement, verificationId, issuedCodes.get(verificationId)).andExpect(status().isOk());
         signup(replacement);
         save(browser, replacement, verificationId).andExpect(status().isBadRequest());
         assertNull(jdbc.queryForObject("select consumed_at from phone_verifications where id = ?",
@@ -164,7 +165,7 @@ class AccountFlowTests {
         Browser browser = login(user);
         String replacement = nextPhone();
         PhoneSent sent = auth.send(new PhoneSend(replacement));
-        auth.verify(new PhoneVerify(sent.verificationId(), replacement, "123456"));
+        auth.verify(new PhoneVerify(sent.verificationId(), replacement, sent.demoSms().code()));
         save(browser, replacement, sent.verificationId()).andExpect(status().isBadRequest());
         assertThrows(com.trueket.backend.global.exception.ApiException.class,
                 () -> auth.consumePhoneChange(user.getId(),
@@ -173,7 +174,7 @@ class AccountFlowTests {
 
     private User signup(String phone) {
         PhoneSent sent = auth.send(new PhoneSend(phone));
-        auth.verify(new PhoneVerify(sent.verificationId(), phone, "123456"));
+        auth.verify(new PhoneVerify(sent.verificationId(), phone, sent.demoSms().code()));
         return auth.signup(new Signup("account-" + phone + "@example.com", PASSWORD, phone,
                 sent.verificationId(), true));
     }
@@ -190,9 +191,11 @@ class AccountFlowTests {
 
     private long send(Browser browser, String phone) throws Exception {
         var result = postJson(browser, "/me/phone/send", Map.of("phone", phone))
-                .andExpect(status().isOk()).andReturn();
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store")).andReturn();
         JsonNode response = json.readTree(result.getResponse().getContentAsString());
-        return response.get("verificationId").asLong();
+        long id = response.get("verificationId").asLong();
+        issuedCodes.put(id, response.path("demoSms").path("code").asText());
+        return id;
     }
 
     private ResultActions verify(Browser browser, String phone, long id, String code) throws Exception {

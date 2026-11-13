@@ -7,6 +7,6 @@ import java.util.UUID;
 
 public record AnalyzeResponse(UUID analyzeId, boolean readable, TradeType detectedType,
                               FinalAssessment assessment, List<MaskedIdentifier> identifiers,
-                              String otherSuspicious, String message) {
+                              String otherSuspicious, String message, ConversationDetails conversations) {
     public record MaskedIdentifier(String type, String value) {}
 }

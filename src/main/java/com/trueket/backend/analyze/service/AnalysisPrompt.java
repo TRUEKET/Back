@@ -20,14 +20,24 @@ public class AnalysisPrompt {
         try (var input = new ClassPathResource("analysis/prompt.txt").getInputStream()) {
             instructions = new String(input.readAllBytes(), StandardCharsets.UTF_8);
         }
+        var enabledIds = json.createArrayNode();
         try (var input = new ClassPathResource("analysis/signals.json").getInputStream()) {
             JsonNode data = json.readTree(input);
             var enabled = json.createArrayNode();
-            data.path("signals").forEach(signal -> { if (signal.path("enabled").asBoolean()) enabled.add(signal); });
+            data.path("signals").forEach(signal -> {
+                if (signal.path("enabled").asBoolean()) {
+                    enabled.add(signal);
+                    enabledIds.add(signal.path("id").asText());
+                }
+            });
             dictionary = enabled.toString();
         }
         try (var input = new ClassPathResource("analysis/response-schema.json").getInputStream()) {
             schema = json.readTree(input);
+            var signalId = (com.fasterxml.jackson.databind.node.ObjectNode) schema.path("properties")
+                    .path("signals").path("items").path("properties").path("id");
+            signalId.set("enum", enabledIds);
+            signalId.put("description", "신호 사전의 활성 ID를 그대로 사용한다. 예: S-A2. sig1 같은 근거 일련번호가 아니다.");
         }
     }
 

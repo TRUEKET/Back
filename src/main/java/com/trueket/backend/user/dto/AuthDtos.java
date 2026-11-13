@@ -14,7 +14,10 @@ public final class AuthDtos {
         @NotBlank String phone, @NotNull Long verificationId,
         @NotNull @AssertTrue(message="개인정보 정책에 동의해 주세요") Boolean privacyConsent) {}
     public record Login(@NotBlank @Email(message="형식이 올바르지 않습니다.") String email, @NotBlank String password) {}
-    public record PhoneSent(Long verificationId, OffsetDateTime expiresAt) {}
+    public record PhoneSent(Long verificationId, OffsetDateTime expiresAt,
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        DemoSms demoSms) {}
+    public record DemoSms(String maskedPhone, String code, String message) {}
     public record UserResponse(Long id, String email, String phoneLast4) {
         public static UserResponse from(User user) { return new UserResponse(user.getId(), user.getEmail(), user.getPhoneLast4()); }
     }
