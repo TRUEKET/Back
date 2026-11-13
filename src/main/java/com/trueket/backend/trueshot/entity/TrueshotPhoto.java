@@ -83,4 +83,12 @@ public class TrueshotPhoto {
         originalStorageKey = null;
         originalDeletedAt = now;
     }
+
+    public void maskingReady(String key, JsonNode boxes) {
+        maskedImage=key; maskBoxes=boxes; maskStatus=MaskStatus.READY;
+    }
+
+    public void maskingFailed() {
+        maskedImage=null; maskStatus=MaskStatus.FAILED;
+    }
 }

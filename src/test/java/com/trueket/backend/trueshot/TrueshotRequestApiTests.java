@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trueket.backend.trueshot.service.TrueshotExpiryJob;
 import com.trueket.backend.trueshot.service.TrueshotFirstPhotoChecker;
 import com.trueket.backend.trueshot.service.TrueshotOriginalStore;
+import com.trueket.backend.trueshot.service.TrueshotMaskDetector;
+import com.trueket.backend.trueshot.service.TrueshotMaskStorage;
+import com.trueket.backend.trueshot.dto.TrueshotMaskDtos.Box;
 import com.trueket.backend.user.entity.User;
 import com.trueket.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -46,6 +49,8 @@ class TrueshotRequestApiTests {
     @Autowired TrueshotExpiryJob expiryJob;
     @MockitoBean TrueshotFirstPhotoChecker checker;
     @MockitoBean TrueshotOriginalStore originals;
+    @MockitoBean TrueshotMaskDetector maskDetector;
+    @MockitoBean TrueshotMaskStorage maskStorage;
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
@@ -167,9 +172,27 @@ class TrueshotRequestApiTests {
         mvc.perform(multipart(path + "/photo").file(photo()).param("n", "2")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isConflict());
-        // 개인정보 가림 단계 완료는 다음 작업이므로 테스트에서 그 상태만 준비한다.
-        jdbc.update("update trueshot_requests set phase = 'SECOND_WAITING', deadline_2 = ? where id = ?",
-                OffsetDateTime.now().plusMinutes(1), id);
+        when(maskStorage.original(anyString())).thenReturn(photo().getBytes());
+        when(maskStorage.masked(anyString())).thenReturn(photo().getBytes());
+        when(maskDetector.detect(any())).thenReturn(new TrueshotMaskDetector.Detection(true,
+                List.of(new Box(0.1,0.1,0.2,0.2))));
+        mvc.perform(post(path+"/mask").session(seller.session())
+                        .header(seller.csrf().getHeaderName(),seller.csrf().getToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.maskStatus").value("READY"));
+        mvc.perform(get(path+"/preview/1").session(buyer.session())).andExpect(status().isForbidden());
+        mvc.perform(get(path+"/preview/1").session(seller.session()))
+                .andExpect(status().isOk()).andExpect(content().contentType("image/jpeg"));
+        mvc.perform(get("/trueshot/{id}",id).session(buyer.session()))
+                .andExpect(jsonPath("$.instruction2").isEmpty());
+        mvc.perform(post(path+"/first-mask/confirm").session(seller.session())
+                        .header(seller.csrf().getHeaderName(),seller.csrf().getToken())
+                        .contentType("application/json")
+                        .content("{\"boxes\":[{\"x\":0.5,\"y\":0.5,\"width\":0.1,\"height\":0.1}]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.instruction2").isString())
+                .andExpect(jsonPath("$.deadline2").exists());
+        OffsetDateTime revealed=jdbc.queryForObject("select instruction_2_revealed_at from trueshot_requests where id=?",OffsetDateTime.class,id);
+        OffsetDateTime deadline=jdbc.queryForObject("select deadline_2 from trueshot_requests where id=?",OffsetDateTime.class,id);
+        assertEquals(60,java.time.Duration.between(revealed,deadline).getSeconds());
         mvc.perform(multipart(path + "/photo").file(photo()).param("n", "2")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isOk())
@@ -201,6 +224,38 @@ class TrueshotRequestApiTests {
                 .andExpect(status().isGone());
         assertEquals("FAILED", jdbc.queryForObject(
                 "select status from trueshot_requests where id = ?", String.class, id));
+    }
+
+    @Test
+    void incompleteMaskNeverExposesPreviewAndAllowsResultOnlyFlow() throws Exception {
+        Browser buyer=buyer();
+        var created=mvc.perform(post("/trueshot").session(buyer.session())
+                .header(buyer.csrf().getHeaderName(),buyer.csrf().getToken())
+                .contentType("application/json").content("{}"))
+                .andExpect(status().isCreated()).andReturn();
+        var data=json.readTree(created.getResponse().getContentAsString());
+        String path=data.get("sellerPath").asText();
+        long id=data.get("id").asLong();
+        Browser seller=anonymous();
+        mvc.perform(post(path+"/start").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken())
+                .contentType("application/json").content("{\"sellerConsented\":true}"))
+                .andExpect(status().isOk());
+        when(checker.check(anyString(),any())).thenReturn(new TrueshotFirstPhotoChecker.Result(true,true,true));
+        mvc.perform(multipart(path+"/photo").file(photo()).param("n","1").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken())).andExpect(status().isOk());
+        when(maskStorage.original(anyString())).thenReturn(photo().getBytes());
+        when(maskDetector.detect(any())).thenReturn(new TrueshotMaskDetector.Detection(false,List.of()));
+        mvc.perform(post(path+"/mask").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.maskStatus").value("FAILED"))
+                .andExpect(jsonPath("$.previewPath").isEmpty());
+        mvc.perform(get(path+"/preview/1").session(seller.session())).andExpect(status().isNotFound());
+        mvc.perform(post(path+"/first-mask/confirm").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken())
+                .contentType("application/json").content("{\"boxes\":[]}"))
+                .andExpect(status().isOk());
+        assertEquals(0,jdbc.queryForObject("select count(*) from trueshot_photos where request_id=? and masked_image is not null",Integer.class,id));
     }
 
     private MockMultipartFile photo() throws Exception {

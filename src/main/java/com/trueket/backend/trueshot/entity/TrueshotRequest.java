@@ -187,4 +187,12 @@ public class TrueshotRequest {
         secondReceivedAt = receivedAt;
         phase = TrueshotPhase.JUDGING;
     }
+
+    public void revealSecondInstruction(String instruction, OffsetDateTime now) {
+        if (phase != TrueshotPhase.FIRST_MASKING || isExpired(now)) throw new IllegalStateException("두 번째 지시를 공개할 수 없습니다.");
+        instruction2=instruction;
+        instruction2RevealedAt=now;
+        deadline2=now.plusMinutes(1);
+        phase=TrueshotPhase.SECOND_WAITING;
+    }
 }
