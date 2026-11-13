@@ -52,7 +52,7 @@ class AnalyzeApiTests {
         service = new AnalyzeService(new CaptureProcessor(), new AnalysisPrompt(),
                 new GeminiClient("fake-test-key", "test-model", "http://127.0.0.1:" + server.getAddress().getPort()),
                 new ModelExtractionParser(), new ChatStageService(new SignalDictionary()), new FinalStageService(),
-                new AnalysisReportLookup(), new AnalysisRedactor(), store, Duration.ofSeconds(2));
+                new AnalysisReportLookup(), new AnalysisRedactor(), store, new ConversationDetailsService(), Duration.ofSeconds(2));
     }
     @AfterEach void cleanup() { server.stop(0); }
 
@@ -66,6 +66,10 @@ class AnalyzeApiTests {
         UUID owner = UUID.randomUUID();
         var result = service.analyze(captures(), "", owner);
         assertTrue(result.readable());
+        assertEquals(1, result.conversations().imageCount());
+        assertEquals(1, result.conversations().suspiciousImageCount());
+        assertEquals(1, result.conversations().images().get(0).imageNumber());
+        assertEquals(result.assessment().chat().countedSignals(),result.conversations().images().get(0).countedSignals());
         assertEquals(Stage.DANGER, result.assessment().finalStage());
         assertFalse(json.writeValueAsString(result).contains("01012345678"));
         assertNotNull(result.assessment().lookupWarning());
@@ -85,6 +89,9 @@ class AnalyzeApiTests {
         assertFalse(result.readable());
         assertNull(result.analyzeId());
         assertNull(result.assessment());
+        assertEquals(1,result.conversations().imageCount());
+        assertEquals(0,result.conversations().suspiciousImageCount());
+        assertTrue(result.conversations().images().isEmpty());
         assertEquals(1, requests.get());
     }
 
@@ -123,6 +130,15 @@ class AnalyzeApiTests {
         assertThrows(GeminiException.class, () -> parser.parse(VALID.replace("\"image_index\":1", "\"image_index\":2"), 1));
         assertThrows(GeminiException.class, () -> parser.parse(VALID.replace("\"readable\":true", "\"readable\":\"true\""), 1));
         assertThrows(GeminiException.class, () -> parser.parse(VALID + " {}", 1));
+    }
+
+    @Test void actualUploadCountAndModelImageNumbersReachApiResponse() throws Exception {
+        modelOutput = VALID.replace("\"image_index\":1", "\"image_index\":3");
+        var one = captures().get(0);
+        var result = service.analyze(List.of(one,one,one), "", UUID.randomUUID());
+        assertEquals(3,result.conversations().imageCount());
+        assertEquals(1,result.conversations().suspiciousImageCount());
+        assertEquals(3,result.conversations().images().get(0).imageNumber());
     }
 
     @Test void missingKeyFailsWithoutNetwork() {

@@ -27,10 +27,12 @@ public class AnalyzeService {
     private final AnalysisRedactor redactor;
     private final AnalysisSessionStore sessions;
     private final Duration timeout;
+    private final ConversationDetailsService conversations;
 
     public AnalyzeService(CaptureProcessor captures, AnalysisPrompt prompt, GeminiClient gemini,
                           ModelExtractionParser parser, ChatStageService chat, FinalStageService stages,
                           AnalysisReportLookup reports, AnalysisRedactor redactor, AnalysisSessionStore sessions,
+                          ConversationDetailsService conversations,
                           @Value("${analysis.model-timeout:15s}") Duration timeout) {
         this.captures = captures;
         this.prompt = prompt;
@@ -42,6 +44,7 @@ public class AnalyzeService {
         this.redactor = redactor;
         this.sessions = sessions;
         this.timeout = timeout;
+        this.conversations = conversations;
     }
 
     public AnalyzeResponse analyze(List<MultipartFile> uploads, String additionalInfo, UUID owner) {
@@ -49,7 +52,8 @@ public class AnalyzeService {
         ModelExtraction result = extract(images, additionalInfo);
         if (!result.readable()) {
             return new AnalyzeResponse(null, false, null, null, List.of(), null,
-                    "대화를 읽지 못했어요. 글자가 잘 보이게 다시 캡처해 주세요");
+                    "대화를 읽지 못했어요. 글자가 잘 보이게 다시 캡처해 주세요",
+                    new ConversationDetails(images.size(), 0, List.of()));
         }
         TradeType type = switch (result.detectedType()) {
             case "transfer" -> TradeType.TRANSFER;
@@ -63,10 +67,11 @@ public class AnalyzeService {
         var signals = result.signals().stream().map(signal -> new AnalysisInput.SignalCandidate(
                 signal.id(), signal.sentenceId(), signal.quote(), signal.reason())).toList();
         var assessment = chat.assess(new AnalysisInput(type, result.typeMismatch(), sentences, signals));
-        FinalAssessment finalAssessment = stages.combine(redactor.redact(assessment, result), reports.lookup(result.extracted()));
+        var masked = redactor.redact(assessment, result);
+        FinalAssessment finalAssessment = stages.combine(masked, reports.lookup(result.extracted()));
         UUID id = sessions.save(owner, new AnalysisSessionStore.Snapshot(result, images));
         return new AnalyzeResponse(id, true, type, finalAssessment, redactor.identifiers(result),
-                redactor.text(result.otherSuspicious(), result), null);
+                redactor.text(result.otherSuspicious(), result), null, conversations.summarize(images.size(), result, masked));
     }
 
     private ModelExtraction extract(List<Image> images, String additionalInfo) {
