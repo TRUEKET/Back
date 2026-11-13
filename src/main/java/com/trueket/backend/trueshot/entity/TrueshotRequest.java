@@ -1,6 +1,7 @@
 package com.trueket.backend.trueshot.entity;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.trueket.backend.trueshot.entity.enums.TrueshotPhase;
 import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
@@ -114,5 +115,41 @@ public class TrueshotRequest {
         request.failReasons = JsonNodeFactory.instance.arrayNode();
         request.createdAt = now;
         return request;
+    }
+
+    public boolean isExpired(OffsetDateTime now) {
+        return !now.isBefore(expiresAt);
+    }
+
+    public boolean canStart() {
+        return status == TrueshotStatus.PENDING && phase == TrueshotPhase.WAITING;
+    }
+
+    public void start(OffsetDateTime now) {
+        if (!canStart() || isExpired(now)) {
+            throw new IllegalStateException("시작할 수 없는 트루샷 요청입니다.");
+        }
+        status = TrueshotStatus.IN_PROGRESS;
+        phase = TrueshotPhase.FIRST_CHECKING;
+        sellerConsentedAt = now;
+        startedAt = now;
+        deadline1 = now.plusMinutes(3);
+    }
+
+    public void failForRequestTimeout() {
+        if (status == TrueshotStatus.FAILED || status == TrueshotStatus.PASSED) {
+            return;
+        }
+        status = TrueshotStatus.FAILED;
+        phase = TrueshotPhase.FAILED;
+        ArrayNode reasons = JsonNodeFactory.instance.arrayNode();
+        reasons.add(startedAt == null ? "30분 안에 시작하지 않음" : "30분 안에 인증이 완료되지 않음");
+        failReasons = reasons;
+    }
+
+    public void closeShareWindow() {
+        if (status == TrueshotStatus.PASSED && phase == TrueshotPhase.SHARE_WAITING) {
+            phase = TrueshotPhase.COMPLETED;
+        }
     }
 }
