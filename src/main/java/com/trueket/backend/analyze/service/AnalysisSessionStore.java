@@ -1,7 +1,7 @@
 package com.trueket.backend.analyze.service;
 
 import com.trueket.backend.analyze.dto.ModelExtraction;
-import com.trueket.backend.global.ai.GeminiClient.Image;
+import com.trueket.backend.global.ai.AnalysisModelClient.Image;
 import com.trueket.backend.global.exception.ApiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;

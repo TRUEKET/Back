@@ -16,11 +16,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static com.trueket.backend.global.ai.GeminiException.Kind.*;
+import static com.trueket.backend.global.ai.ModelException.Kind.*;
 
 @Component
-public class GeminiClient {
-    public record Image(String mimeType, String data) {}
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name="analysis.ai-provider", havingValue="gemini", matchIfMissing=true)
+public class GeminiClient implements AnalysisModelClient {
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     private final String apiKey;
@@ -40,7 +40,7 @@ public class GeminiClient {
 
     public String generate(String prompt, List<Image> images, JsonNode schema, Duration timeout) {
         if (apiKey.isBlank() || !java.util.Set.of("minimal","low","medium","high").contains(thinkingLevel)) {
-            throw new GeminiException(CONFIGURATION);
+            throw new ModelException(CONFIGURATION);
         }
         List<Map<String, Object>> input = new ArrayList<>();
         input.add(Map.of("type", "text", "text", prompt));
@@ -53,7 +53,7 @@ public class GeminiClient {
                     "generation_config", Map.of("thinking_level", thinkingLevel),
                     "response_format", Map.of("type", "text", "mime_type", "application/json", "schema", schema)));
             if (body.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 19_000_000) {
-                throw new GeminiException(INVALID_RESPONSE);
+                throw new ModelException(INVALID_RESPONSE);
             }
             HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(timeout)
                     .header("x-goog-api-key", apiKey).header("Content-Type", "application/json")
@@ -61,20 +61,20 @@ public class GeminiClient {
                     .POST(HttpRequest.BodyPublishers.ofString(body)).build();
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 401 || response.statusCode() == 403) {
-                throw new GeminiException(AUTHENTICATION);
+                throw new ModelException(AUTHENTICATION);
             }
             if (response.statusCode() == 429) {
-                throw new GeminiException(RATE_LIMIT);
+                throw new ModelException(RATE_LIMIT);
             }
             if (response.statusCode() >= 500) {
-                throw new GeminiException(UPSTREAM);
+                throw new ModelException(UPSTREAM);
             }
             if (response.statusCode() != 200 || response.body().length() > 2_000_000) {
-                throw new GeminiException(INVALID_RESPONSE);
+                throw new ModelException(INVALID_RESPONSE);
             }
             JsonNode result = json.readTree(response.body());
             if (!"completed".equals(result.path("status").asText())) {
-                throw new GeminiException(INVALID_RESPONSE);
+                throw new ModelException(INVALID_RESPONSE);
             }
             StringBuilder output = new StringBuilder();
             for (JsonNode step : result.path("steps")) {
@@ -87,16 +87,16 @@ public class GeminiClient {
                 }
             }
             if (output.isEmpty()) {
-                throw new GeminiException(INVALID_RESPONSE);
+                throw new ModelException(INVALID_RESPONSE);
             }
             return output.toString();
         } catch (HttpTimeoutException e) {
-            throw new GeminiException(TIMEOUT);
+            throw new ModelException(TIMEOUT);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new GeminiException(UPSTREAM);
+            throw new ModelException(UPSTREAM);
         } catch (IOException e) {
-            throw new GeminiException(UPSTREAM);
+            throw new ModelException(UPSTREAM);
         }
     }
 }

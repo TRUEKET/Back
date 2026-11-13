@@ -2,7 +2,7 @@ package com.trueket.backend.analyze.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trueket.backend.analyze.dto.ModelExtraction;
-import com.trueket.backend.global.ai.GeminiException;
+import com.trueket.backend.global.ai.ModelException;
 import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
@@ -57,7 +57,7 @@ public class ModelExtractionParser {
         }
     }
 
-    private GeminiException invalid() {
-        return new GeminiException(GeminiException.Kind.INVALID_RESPONSE);
+    private ModelException invalid() {
+        return new ModelException(ModelException.Kind.INVALID_RESPONSE);
     }
 }

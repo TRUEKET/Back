@@ -134,9 +134,9 @@ class AnalyzeApiTests {
 
     @Test void badImageReferenceAndCoercedBooleanAreRejected() {
         var parser = new ModelExtractionParser();
-        assertThrows(GeminiException.class, () -> parser.parse(VALID.replace("\"image_index\":1", "\"image_index\":2"), 1));
-        assertThrows(GeminiException.class, () -> parser.parse(VALID.replace("\"readable\":true", "\"readable\":\"true\""), 1));
-        assertThrows(GeminiException.class, () -> parser.parse(VALID + " {}", 1));
+        assertThrows(ModelException.class, () -> parser.parse(VALID.replace("\"image_index\":1", "\"image_index\":2"), 1));
+        assertThrows(ModelException.class, () -> parser.parse(VALID.replace("\"readable\":true", "\"readable\":\"true\""), 1));
+        assertThrows(ModelException.class, () -> parser.parse(VALID + " {}", 1));
     }
 
     @Test void actualUploadCountAndModelImageNumbersReachApiResponse() throws Exception {
@@ -150,13 +150,13 @@ class AnalyzeApiTests {
 
     @Test void unsupportedThinkingSettingFailsWithoutNetwork() {
         var client = new GeminiClient("fake-test-key", "test", "http://127.0.0.1:1", "unsupported");
-        assertEquals(GeminiException.Kind.CONFIGURATION, assertThrows(GeminiException.class,
+        assertEquals(ModelException.Kind.CONFIGURATION, assertThrows(ModelException.class,
                 () -> client.generate("test", List.of(), json.createObjectNode(), Duration.ofSeconds(1))).kind());
     }
 
     @Test void missingKeyFailsWithoutNetwork() {
         var client = new GeminiClient("", "test", "http://127.0.0.1:1", "low");
-        assertEquals(GeminiException.Kind.CONFIGURATION, assertThrows(GeminiException.class,
+        assertEquals(ModelException.Kind.CONFIGURATION, assertThrows(ModelException.class,
                 () -> client.generate("test", List.of(), json.createObjectNode(), Duration.ofSeconds(1))).kind());
     }
 }

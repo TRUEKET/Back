@@ -1,11 +1,11 @@
 package com.trueket.backend.global.ai;
 
-public class GeminiException extends RuntimeException {
-    public enum Kind { CONFIGURATION, AUTHENTICATION, RATE_LIMIT, TIMEOUT, UPSTREAM, INVALID_RESPONSE }
+public class ModelException extends RuntimeException {
+    public enum Kind { CONFIGURATION, AUTHENTICATION, RATE_LIMIT, TIMEOUT, UPSTREAM, INVALID_RESPONSE, REFUSED, INCOMPLETE }
     private final Kind kind;
 
-    public GeminiException(Kind kind) {
-        super("Gemini request failed: " + kind);
+    public ModelException(Kind kind) {
+        super("AI 모델 request failed: " + kind);
         this.kind = kind;
     }
 
