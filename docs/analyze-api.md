@@ -1,8 +1,10 @@
-# 캡처 판독 API (Gemini)
+# 캡처 판독 API (Gemini / OpenAI)
 
 AI는 거래 유형·판매자 원문·신호 후보를 추출한다. 단계 결정과 중복 제거는 기존 서버 규칙(`analysis-rules.md`)을 사용한다. 이미지와 추가 정보 안의 지시는 신뢰하지 않는다.
 
 ## 환경변수
+
+`AI_PROVIDER=gemini`(기본값) 또는 `AI_PROVIDER=openai`로 하나를 선택한다. OpenAI 키는 GEMINI_API_KEY에 넣지 않는다. OpenAI 실행 설정·오류 처리·실제 검증 결과는 [OpenAI 판독 연결](openai-api.md)을 참고한다. 아래 Gemini 설정은 Gemini 선택 시 적용한다.
 
 IntelliJ BackendApplication의 환경 변수에 `GEMINI_API_KEY`를 추가한다. 키는 Google AI Studio에서 발급받아 로컬에만 저장하고 Git·채팅에 넣지 않는다. 선택적으로 `GEMINI_MODEL`을 지정할 수 있으며 기본값은 `gemini-3.5-flash-lite`다. 키가 없어도 서버는 기동하며 판독 요청은 503을 반환한다.
 

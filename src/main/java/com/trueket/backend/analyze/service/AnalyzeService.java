@@ -1,9 +1,9 @@
 package com.trueket.backend.analyze.service;
 
 import com.trueket.backend.analyze.dto.*;
-import com.trueket.backend.global.ai.GeminiClient;
-import com.trueket.backend.global.ai.GeminiClient.Image;
-import com.trueket.backend.global.ai.GeminiException;
+import com.trueket.backend.global.ai.AnalysisModelClient;
+import com.trueket.backend.global.ai.AnalysisModelClient.Image;
+import com.trueket.backend.global.ai.ModelException;
 import com.trueket.backend.global.exception.ApiException;
 import com.trueket.backend.report.entity.enums.TradeType;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,7 +19,7 @@ import java.util.UUID;
 public class AnalyzeService {
     private final CaptureProcessor captures;
     private final AnalysisPrompt prompt;
-    private final GeminiClient gemini;
+    private final AnalysisModelClient model;
     private final ModelExtractionParser parser;
     private final ChatStageService chat;
     private final FinalStageService stages;
@@ -29,14 +29,14 @@ public class AnalyzeService {
     private final Duration timeout;
     private final ConversationDetailsService conversations;
 
-    public AnalyzeService(CaptureProcessor captures, AnalysisPrompt prompt, GeminiClient gemini,
+    public AnalyzeService(CaptureProcessor captures, AnalysisPrompt prompt, AnalysisModelClient model,
                           ModelExtractionParser parser, ChatStageService chat, FinalStageService stages,
                           AnalysisReportLookup reports, AnalysisRedactor redactor, AnalysisSessionStore sessions,
                           ConversationDetailsService conversations,
                           @Value("${analysis.model-timeout:30s}") Duration timeout) {
         this.captures = captures;
         this.prompt = prompt;
-        this.gemini = gemini;
+        this.model = model;
         this.parser = parser;
         this.chat = chat;
         this.stages = stages;
@@ -77,8 +77,8 @@ public class AnalyzeService {
     private ModelExtraction extract(List<Image> images, String additionalInfo) {
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
-                return parser.parse(gemini.generate(prompt.text(additionalInfo), images, prompt.schema(), timeout), images.size());
-            } catch (GeminiException e) {
+                return parser.parse(model.generate(prompt.text(additionalInfo), images, prompt.schema(), timeout), images.size());
+            } catch (ModelException e) {
                 if (attempt == 0 && e.retryable() && !Thread.currentThread().isInterrupted()) continue;
                 HttpStatus status = switch (e.kind()) {
                     case CONFIGURATION, AUTHENTICATION -> HttpStatus.SERVICE_UNAVAILABLE;
