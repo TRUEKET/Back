@@ -22,7 +22,8 @@ public class AuthController {
     public AuthController(AuthService auth, UserRepository users) { this.auth=auth; this.users=users; }
     @GetMapping("/auth/csrf") public CsrfToken csrf(CsrfToken token) { return token; }
     @PostMapping("/auth/phone/send")
-    public PhoneSent send(@Valid @RequestBody PhoneSend input, HttpServletRequest request) {
+    public PhoneSent send(@Valid @RequestBody PhoneSend input, HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
         PhoneSent sent = auth.send(input);
         request.getSession().setAttribute("phoneVerificationId", sent.verificationId());
         request.getSession().removeAttribute("verifiedPhoneId");
