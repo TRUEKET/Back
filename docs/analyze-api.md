@@ -149,7 +149,7 @@ AnalysisReportLookup이 정규화 → 유형 확인 → HMAC → findByTypeAndVa
 - 서버 세션의 Spring Security 인증과 ACTIVE 계정을 확인한다(실패 401).
 - 세션의 `analysisOwner`와 결과 소유권을 비교한다. 만료·삭제·다른 세션·신규 판독으로 대체된 결과는 모두 404다.
 - 같은 브라우저의 익명 판독 뒤 로그인은 기존 세션 속성이 유지되므로 사용할 수 있다. 다른 브라우저/서버 재시작 후에는 다시 판독해야 한다. 로그인 상태에서 다른 계정으로 전환하면 이전 판독 결과는 삭제된다 (#30).
-- 반환값: 판독 ID, 로그인 사용자 ID, 추정 거래 유형, 원문 계좌·전화·SNS 목록, 서버 규칙으로 채택하고 민감정보를 가린 근거 목록이다. 타입이 OTHER이면 신고 흐름에서 사용자의 거래 유형 확인이 필요하다.
+- 반환값: 판독 ID, 로그인 사용자 ID, 추정 거래 유형, 원문 계좌·전화·SNS 목록, 서버 규칙으로 채택하고 민감정보를 가린 근거 목록, 최초 판독에서 저장한 showReportButton·showSuspicionReport다. 타입이 OTHER이면 신고 흐름에서 사용자의 거래 유형 확인이 필요하다.
 - 원문 식별자는 신고 담당자의 정규화·해시·암호화 처리에만 사용한다. 이 DTO를 HTTP 응답·공개 근거·로그로 출력하지 않는다. 모델 추출값은 검증된 판매자 신원이나 사실 확정이 아니다.
 - 원본 사진, 전체 대화, 모델이 임의로 생성한 신호는 넘기지 않는다. 사진 증빙이 필요하면 신고 단계에서 별도로 업로드·가림 처리한다.
 - 이 서비스는 결과를 조회하는 시점에 유효성을 확인하고 불변 목록으로 복사한다. 신고 서비스는 반환된 값으로 같은 요청 안에서 신고 DB를 저장해야 한다. 저장 뒤에는 임시 판독 세션이 아니라 신고 DB를 사용한다. 중복 신고 정책·신고 가능 조건·트랜잭션·증빙 저장은 신고 모듈 책임이다.
@@ -176,3 +176,18 @@ var source = analysisReportSourceService.load(input.analysisId(), request.getSes
 - 판독 조회에서는 식별자를 저장·암호화하지 않는다. IDENTIFIER_ENCRYPTION_KEY는 신고 저장 모듈에 필요하며 이 조회에는 사용하지 않는다.
 
 H2와 합성 모델 응답으로 판독→정규화/해시→신고 집계→최종 단계 흐름을 검증했다. 실제 신고 등록과 이어지는 실환경 검증은 신고 모듈 병합 후 진행한다. 비밀값은 Git이나 로그에 넣지 않는다.
+
+## 최초 신고 가능 조건 전달 (#39)
+
+AnalyzeService는 최초 FinalAssessment를 화면 응답으로 보내기 전에 동일한 showReportButton·showSuspicionReport를 AnalysisSessionStore.Snapshot에 함께 저장한다. load()는 두 조건을 다시 계산하거나 클라이언트 요청에서 받지 않고 해당 스냅샷의 값을 반환한다. 이후 신고 집계나 신호 사전이 바뀌어도 같은 analysisId의 두 조건은 최초 값으로 유지된다. 신규 판독은 기존 정책대로 이전 결과를 대체한다.
+
+신고 담당자는 기존 호출 뒤 아래 접근자를 사용해 신고 종류별 허용 조건을 검증한다. 두 값이 같다고 가정하지 않는다. 대화는 안전하고 기존 신고로만 위험도가 올라가면 showReportButton=true, showSuspicionReport=false가 될 수 있다.
+
+```java
+var source = analysisReportSourceService.load(input.analysisId(), request.getSession(false));
+boolean reportAllowed = source.showReportButton();
+boolean suspicionAllowed = source.showSuspicionReport();
+// 요청한 신고 종류에 맞는 조건을 검증한 뒤 저장한다.
+```
+
+원본 조건이 없는 내부/구형 2인자 Snapshot 생성은 두 값을 false로 취급한다. 사용자에게 다시 판독하도록 안내하며, 근거만 보고 신고 권한을 추정하지 않는다. 일반 판독 경로는 반드시 최초 계산값을 포함한 4인자 생성자를 사용한다. 현재 메모리 저장 방식이라 서버 재시작 전 결과는 복원되지 않는다. 이 두 값은 서버 내부 전달 DTO에 추가됐으며 신고 등록 API의 실제 거부 처리는 RP 담당자 코드에서 적용해야 한다.

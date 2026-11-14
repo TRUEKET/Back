@@ -15,7 +15,12 @@ import java.util.UUID;
 
 @Component
 public class AnalysisSessionStore {
-    public record Snapshot(ModelExtraction extraction, List<Image> captures) {
+    public record Snapshot(ModelExtraction extraction, List<Image> captures,
+                           boolean showReportButton, boolean showSuspicionReport) {
+        // Legacy/internal snapshots without a computed assessment never grant report permissions.
+        public Snapshot(ModelExtraction extraction, List<Image> captures) {
+            this(extraction, captures, false, false);
+        }
         public Snapshot { captures = List.copyOf(captures); }
     }
     private record Entry(UUID owner, Snapshot snapshot, Instant expiresAt, long size) {}

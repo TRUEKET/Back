@@ -34,7 +34,8 @@ public class AnalysisReportSourceService {
         long userId = activeUser(session);
         Object owner = session.getAttribute("analysisOwner");
         if (analysisId == null || !(owner instanceof UUID)) throw expired();
-        var extraction = sessions.get(analysisId, (UUID) owner).extraction();
+        var snapshot = sessions.get(analysisId, (UUID) owner);
+        var extraction = snapshot.extraction();
         if (!extraction.readable()) throw expired();
         TradeType type = switch (extraction.detectedType()) {
             case "transfer" -> TradeType.TRANSFER;
@@ -52,7 +53,8 @@ public class AnalysisReportSourceService {
         var extracted = extraction.extracted();
         return new AnalysisReportSource(analysisId, userId, type,
                 new AnalysisReportSource.Identifiers(extracted.accounts(), extracted.phones(), extracted.xAccounts()),
-                Stream.concat(assessment.countedSignals().stream(), assessment.informationalSignals().stream()).toList());
+                Stream.concat(assessment.countedSignals().stream(), assessment.informationalSignals().stream()).toList(),
+                snapshot.showReportButton(), snapshot.showSuspicionReport());
     }
 
     private long activeUser(HttpSession session) {

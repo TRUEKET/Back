@@ -6,7 +6,8 @@ import java.util.UUID;
 
 /** Server-internal input for report creation; never return this as an HTTP response. */
 public record AnalysisReportSource(UUID analysisId, long userId, TradeType tradeType,
-                                   Identifiers identifiers, List<ChatAssessment.Evidence> evidence) {
+                                   Identifiers identifiers, List<ChatAssessment.Evidence> evidence,
+                                   boolean showReportButton, boolean showSuspicionReport) {
     public AnalysisReportSource { evidence = List.copyOf(evidence); }
 
     /** Unmasked values for exact identifier matching, not for public evidence or logs. */

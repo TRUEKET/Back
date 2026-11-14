@@ -114,14 +114,19 @@ class AnalysisReportLookupTests {
                  "signals":[],"extracted":{"accounts":[],"phones":["01012345678"],"x_accounts":[],"links":[]},
                  "other_suspicious":null,"sensitive_values":["01012345678"]}
                 """;
+        var sessions=new AnalysisSessionStore();
+        UUID owner=UUID.randomUUID();
         var service=new AnalyzeService(new CaptureProcessor(),prompt,(p,i,s,t)->output,
                 new ModelExtractionParser(),chat,new FinalStageService(),lookup,new AnalysisRedactor(),
-                new AnalysisSessionStore(),new ConversationDetailsService(),Duration.ofSeconds(2));
+                sessions,new ConversationDetailsService(),Duration.ofSeconds(2));
         var bytes=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(32,32,BufferedImage.TYPE_INT_RGB),"png",bytes);
-        var response=service.analyze(List.of(new MockMultipartFile("captures","synthetic.png","image/png",bytes.toByteArray())),"",UUID.randomUUID());
+        var response=service.analyze(List.of(new MockMultipartFile("captures","synthetic.png","image/png",bytes.toByteArray())),"",owner);
         assertEquals(Stage.SAFE,response.assessment().chat().stage());
         assertEquals(Stage.DANGER,response.assessment().finalStage());
         assertTrue(response.assessment().raisedByReports());
+        var snapshot=sessions.get(response.analyzeId(),owner);
+        assertTrue(snapshot.showReportButton());
+        assertFalse(snapshot.showSuspicionReport());
         assertNull(response.assessment().lookupWarning());
         assertFalse(new ObjectMapper().writeValueAsString(response).contains("01012345678"));
     }
