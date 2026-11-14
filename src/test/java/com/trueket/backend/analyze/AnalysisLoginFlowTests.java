@@ -92,6 +92,33 @@ class AnalysisLoginFlowTests {
         assertEquals(id,source.load(id,first).analysisId());
         store.delete(id,(UUID)first.getAttribute("analysisOwner"));
     }
+    @Test void logoutDoesNotRemoveAnotherBrowsersResult() throws Exception {
+        var first=browser();login(first,user());UUID firstId=analyze(first);
+        UUID firstOwner=(UUID)first.getAttribute("analysisOwner");
+        var other=browser();login(other,user());UUID otherId=analyze(other);
+        var token=csrf(first);
+        mvc.perform(post("/auth/logout").session(first).header(token.getHeaderName(),token.getToken()))
+                .andExpect(status().isNoContent());
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(ApiException.class,()->store.get(firstId,firstOwner)).getStatus());
+        assertEquals(otherId,source.load(otherId,other).analysisId());
+        store.delete(otherId,(UUID)other.getAttribute("analysisOwner"));
+    }
+    @Test void missingCsrfDoesNotDiscardAnalysisOrSession() throws Exception {
+        var session=browser();login(session,user());UUID id=analyze(session);
+        mvc.perform(post("/auth/logout").session(session)).andExpect(status().isForbidden());
+        assertFalse(session.isInvalid());
+        assertEquals(id,source.load(id,session).analysisId());
+        store.delete(id,(UUID)session.getAttribute("analysisOwner"));
+    }
+    @Test void anonymousLogoutAlsoClearsTemporaryAnalysis() throws Exception {
+        var session=browser();UUID id=analyze(session);
+        UUID owner=(UUID)session.getAttribute("analysisOwner");
+        var token=csrf(session);
+        mvc.perform(post("/auth/logout").session(session).header(token.getHeaderName(),token.getToken()))
+                .andExpect(status().isNoContent());
+        assertTrue(session.isInvalid());
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(ApiException.class,()->store.get(id,owner)).getStatus());
+    }
     @Test void logoutThenAnotherLoginCannotReusePreviousResult() throws Exception {
         var session=browser();login(session,user());UUID id=analyze(session);
         UUID owner=(UUID)session.getAttribute("analysisOwner");
@@ -101,6 +128,6 @@ class AnalysisLoginFlowTests {
         assertTrue(session.isInvalid());
         var next=browser();login(next,user());
         assertEquals(HttpStatus.NOT_FOUND,assertThrows(ApiException.class,()->source.load(id,next)).getStatus());
-        store.delete(id,owner);
+        assertEquals(HttpStatus.NOT_FOUND,assertThrows(ApiException.class,()->store.get(id,owner)).getStatus());
     }
 }
