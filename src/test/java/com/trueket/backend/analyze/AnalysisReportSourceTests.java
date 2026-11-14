@@ -51,6 +51,22 @@ class AnalysisReportSourceTests {
         assertThrows(UnsupportedOperationException.class,()->result.identifiers().phones().add("other"));
         assertThrows(UnsupportedOperationException.class,()->result.evidence().clear());
     }
+    @Test void returnsStoredFlagsEvenWhenCurrentChatEvidenceWouldAllowSuspicion() {
+        var extraction=store.get(id,owner).extraction();
+        for (boolean showReport : new boolean[]{false,true}) {
+            for (boolean showSuspicion : new boolean[]{false,true}) {
+                UUID saved=store.save(owner,new AnalysisSessionStore.Snapshot(extraction,List.of(),showReport,showSuspicion));
+                var source=service.load(saved,session);
+                assertEquals(showReport,source.showReportButton());
+                assertEquals(showSuspicion,source.showSuspicionReport());
+            }
+        }
+    }
+    @Test void snapshotsWithoutInitialFlagsDoNotGrantReportPermission() {
+        var source=service.load(id,session);
+        assertFalse(source.showReportButton());
+        assertFalse(source.showSuspicionReport());
+    }
     @Test void rejectsAnonymousAndInactiveUsers() {
         assertStatus(HttpStatus.UNAUTHORIZED,()->service.load(id,null));
         session.removeAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);

@@ -62,6 +62,16 @@ class AnalyzeApiTests {
         return List.of(new MockMultipartFile("captures", "chat.png", "image/png", output.toByteArray()));
     }
 
+    @Test void storesInitialReportFlagsAlongsideAnalysis() throws Exception {
+        UUID owner = UUID.randomUUID();
+        var response = service.analyze(captures(), "", owner);
+        var snapshot = store.get(response.analyzeId(), owner);
+        assertEquals(response.assessment().showReportButton(), snapshot.showReportButton());
+        assertEquals(response.assessment().showSuspicionReport(), snapshot.showSuspicionReport());
+        assertTrue(snapshot.showReportButton());
+        assertTrue(snapshot.showSuspicionReport());
+    }
+
     @Test void imageToRulesMasksOutputAndKeepsSnapshotOwnerBound() throws Exception {
         UUID owner = UUID.randomUUID();
         var result = service.analyze(captures(), "", owner);
@@ -129,7 +139,12 @@ class AnalyzeApiTests {
 
     @Test void inventedQuoteCannotIncreaseStage() throws Exception {
         modelOutput = VALID.replace("\"quote\":\"먼저 01012345678로 연락하고 선입금해 주세요\"", "\"quote\":\"없는 문장\"");
-        assertEquals(Stage.SAFE, service.analyze(captures(), "", UUID.randomUUID()).assessment().chat().stage());
+        UUID owner=UUID.randomUUID();
+        var response=service.analyze(captures(), "", owner);
+        assertEquals(Stage.SAFE, response.assessment().chat().stage());
+        var snapshot=store.get(response.analyzeId(),owner);
+        assertFalse(snapshot.showReportButton());
+        assertFalse(snapshot.showSuspicionReport());
     }
 
     @Test void badImageReferenceAndCoercedBooleanAreRejected() {
