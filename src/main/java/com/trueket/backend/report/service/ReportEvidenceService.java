@@ -29,6 +29,8 @@ public class ReportEvidenceService {
     private final ReportEvidenceImageValidator imageValidator;
     private final ReportEvidenceAiService aiService;
     private final ReportEvidenceImageProcessor imageProcessor;
+    private final ReportEvidencePrivacyValidator privacyValidator;
+    private final PendingReportEvidenceService pendingReportEvidenceService;
 
     public ReportEvidenceResponse verify(
             Long authenticatedUserId,
@@ -106,9 +108,22 @@ public class ReportEvidenceService {
             throw invalidEvidence();
         }
 
+        // 14. 잘라낸 이미지의 개인정보 노출 여부 검사
+        privacyValidator.validate(croppedImage);
+
+        // 15. 모든 검증을 통과한 이미지만 임시 저장
+        UUID evidenceToken = pendingReportEvidenceService.save(
+                authenticatedUserId,
+                analysisId,
+                targetAccount,
+                croppedImage
+        );
+
+        // 16. 검증 결과와 임시 증빙 토큰 반환
         return new ReportEvidenceResponse(
                 true,
-                "송금 내역의 수취 계좌가 신고 대상과 일치합니다."
+                "송금 내역의 수취 계좌가 신고 대상과 일치합니다.",
+                evidenceToken
         );
     }
 

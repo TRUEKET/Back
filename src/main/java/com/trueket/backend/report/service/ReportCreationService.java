@@ -22,19 +22,28 @@ import com.trueket.backend.report.entity.enums.ReportKind;
 import com.trueket.backend.report.repository.ReportIdentifierRepository;
 import com.trueket.backend.report.repository.ReportRepository;
 import com.trueket.backend.user.entity.User;
+import com.trueket.backend.report.entity.Evidence;
+import com.trueket.backend.report.entity.PendingReportEvidence;
+import com.trueket.backend.report.entity.enums.EvidenceKind;
+import com.trueket.backend.report.repository.EvidenceRepository;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReportCreationService {
@@ -45,6 +54,9 @@ public class ReportCreationService {
     private final IdentifierRepository identifierRepository;
     private final IdentifierHashService identifierHashService;
     private final IdentifierEncryptionService encryptionService;
+    private final PendingReportEvidenceService pendingReportEvidenceService;
+    private final EvidenceRepository evidenceRepository;
+    private final SupabaseReportEvidenceStore evidenceStore;
 
     // JD 판독 결과 조회 서비스
     private final AnalysisReportSourceService analysisReportSourceService;
@@ -251,6 +263,54 @@ public class ReportCreationService {
         }
 
         reportIdentifierRepository.flush();
+        // 12. 증빙 사진 연결
+        if (request.evidenceToken() != null) {
+
+            // JD 판독 결과에서 정규화된 계좌번호만 추출
+            List<String> normalizedAccounts = normalized.stream()
+                    .filter(item -> item.type() == IdentifierType.ACCOUNT)
+                    .map(IdentifierNormalizer.NormalizedIdentifier::value)
+                    .toList();
+
+            // 토큰, 사용자, 판독 ID, 계좌 일치 여부 검증
+            PendingReportEvidence pending =
+                    pendingReportEvidenceService.consume(
+                            request.evidenceToken(),
+                            authenticatedUserId,
+                            request.analysisId(),
+                            normalizedAccounts
+                    );
+
+            // 최종 증빙 경로 생성
+            String reportStorageKey =
+                    evidenceStore.createReportKey(authenticatedUserId);
+
+            // DB 커밋 결과에 따른 Storage 정리 예약
+            registerEvidenceStorageCleanup(
+                    pending.getStorageKey(),
+                    reportStorageKey
+            );
+
+            // Supabase Storage에 최종 증빙 복사
+            evidenceStore.copyPendingToReport(
+                    pending.getStorageKey(),
+                    reportStorageKey
+            );
+
+
+            OffsetDateTime createdAt = OffsetDateTime.now();
+
+            Evidence evidence = Evidence.create(
+                    report,
+                    EvidenceKind.NUMBER_FRAGMENT,
+                    reportStorageKey,
+                    pending.getAccountHash(),
+                    ReportEvidenceRetentionPolicy.finalExpiresAt(createdAt)
+            );
+
+            evidenceRepository.saveAndFlush(evidence);
+
+        }
 
         // 12. 응답
         return new ReportCreateResponse(
@@ -318,4 +378,44 @@ public class ReportCreationService {
         }
     }
 
+    private void registerEvidenceStorageCleanup(
+            String pendingKey,
+            String reportKey
+    ) {
+        if (!TransactionSynchronizationManager
+                .isSynchronizationActive()) {
+            throw new IllegalStateException(
+                    "활성화된 트랜잭션이 없습니다."
+            );
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+
+                    @Override
+                    public void afterCompletion(int status) {
+
+                        try {
+                            if (status == STATUS_COMMITTED) {
+                                // 신고 저장 성공: 임시 파일 정리
+                                evidenceStore.deletePending(pendingKey);
+
+                            } else {
+                                // 신고 저장 실패: 최종 복사본 정리
+                                evidenceStore.deleteReport(reportKey);
+                            }
+
+                        } catch (Exception e) {
+                            log.error(
+                                    "신고 증빙 Storage 정리 실패. pendingKey={}, reportKey={}, status={}",
+                                    pendingKey,
+                                    reportKey,
+                                    status,
+                                    e
+                            );
+                        }
+                    }
+                }
+        );
+    }
 }

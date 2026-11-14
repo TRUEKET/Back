@@ -1,3 +1,4 @@
+
 package com.trueket.backend.report.dto;
 
 import com.trueket.backend.report.entity.enums.ReportKind;
@@ -11,6 +12,7 @@ public record ReportCreateRequest(
         @NotNull UUID analysisId,
         @NotNull ReportKind kind,
         LocalDate sentDate,
-        List<String> referenceLinks
+        List<String> referenceLinks,
+        UUID evidenceToken
 ) {
 }
