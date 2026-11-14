@@ -180,8 +180,10 @@ class StageRulesTests {
         FinalAssessment result = finalStages.combine(assess(TradeType.TRANSFER, "S-B3"), new ReportLookup(false, List.of()));
         assertEquals(Stage.SUSPECT, result.finalStage());
         assertNotNull(result.lookupWarning());
-        assertThrows(IllegalArgumentException.class,
-                () -> new ReportLookup(false, List.of(new ReportLookup.Target("account", 1, 0))));
+        var partial = finalStages.combine(assess(TradeType.TRANSFER),
+                new ReportLookup(false, List.of(new ReportLookup.Target("account", 1, 0))));
+        assertEquals(Stage.DANGER, partial.finalStage());
+        assertNotNull(partial.lookupWarning());
         assertThrows(IllegalArgumentException.class, () -> new ReportLookup.Target("account", -1, 0));
     }
 
