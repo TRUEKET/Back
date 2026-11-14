@@ -20,10 +20,10 @@ public class SupabaseStorageDeletion {
     private final Map<StorageArea,String> buckets;
 
     public SupabaseStorageDeletion(@Value("${storage.supabase-url:}") String url,
-                                   @Value("${storage.service-role-key:}") String serviceKey,
-                                   @Value("${storage.evidence-bucket:report-evidence}") String evidence,
-                                   @Value("${storage.trueshot-masked-bucket:trueshot-photos}") String masked,
-                                   @Value("${storage.trueshot-original-bucket:trueshot-photos}") String original) {
+            @Value("${storage.service-role-key:}") String serviceKey,
+            @Value("${storage.evidence-bucket:report-evidence}") String evidence,
+            @Value("${storage.trueshot-masked-bucket:trueshot-photos}") String masked,
+            @Value("${storage.trueshot-original-bucket:trueshot-photos}") String original) {
         this.url = url.replaceAll("/+$", "");
         this.serviceKey = serviceKey;
         this.buckets = Map.of(StorageArea.EVIDENCE,evidence,StorageArea.TRUESHOT_MASKED,masked,
@@ -60,10 +60,10 @@ public class SupabaseStorageDeletion {
     private void deleteBatch(String bucket, List<String> keys) {
         try {
             var request = HttpRequest.newBuilder(URI.create(url+"/storage/v1/object/"+bucket))
-                    .timeout(Duration.ofSeconds(5)).header("apikey",serviceKey)
-                    .header("Authorization","Bearer "+serviceKey).header("Content-Type","application/json")
-                    .method("DELETE",HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of("prefixes",keys))))
-                    .build();
+                .timeout(Duration.ofSeconds(5)).header("apikey",serviceKey)
+                .header("Authorization","Bearer "+serviceKey).header("Content-Type","application/json")
+                .method("DELETE",HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of("prefixes",keys))))
+                .build();
             var response = http.send(request,HttpResponse.BodyHandlers.ofString());
             // Missing objects are handled idempotently by Supabase's bulk removal API (200 + []).
             // A missing bucket, auth failure or server failure is not a successful deletion.
@@ -88,6 +88,6 @@ public class SupabaseStorageDeletion {
 
     private ApiException unavailable() {
         return new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
-                "사진 삭제를 완료하지 못했어요. 계정은 삭제하지 않았으니 잠시 후 다시 시도해 주세요");
+            "사진 삭제를 완료하지 못했어요. 계정은 삭제하지 않았으니 잠시 후 다시 시도해 주세요");
     }
 }

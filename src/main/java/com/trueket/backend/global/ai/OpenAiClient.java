@@ -42,7 +42,7 @@ public class OpenAiClient implements AnalysisModelClient {
 
     // 트루샷에는 대화 판독용 지시를 섞지 않고 작업별 지시와 응답 형식을 전달한다.
     public String generateForTask(String instructions,String schemaName,String prompt,
-                                  List<Image> images,JsonNode schema,Duration timeout) {
+            List<Image> images,JsonNode schema,Duration timeout) {
         if (apiKey.isBlank() || model.isBlank() || maxOutputTokens<1
                 || !Set.of("none","minimal","low","medium","high","xhigh","max").contains(reasoningEffort)) {
             throw new ModelException(CONFIGURATION);
@@ -50,18 +50,18 @@ public class OpenAiClient implements AnalysisModelClient {
         List<Map<String,Object>> content=new ArrayList<>();
         content.add(Map.of("type","input_text","text",prompt));
         for(var image:images) content.add(Map.of("type","input_image","detail","high",
-                "image_url","data:"+image.mimeType()+";base64,"+image.data()));
+            "image_url","data:"+image.mimeType()+";base64,"+image.data()));
         try {
             String body=json.writeValueAsString(Map.of(
-                    "model",model,"store",false,"max_output_tokens",maxOutputTokens,
-                    "reasoning",Map.of("effort",reasoningEffort),
-                    "instructions",instructions,
-                    "input",List.of(Map.of("role","user","content",content)),
-                    "text",Map.of("format",Map.of("type","json_schema","name",schemaName,"strict",true,"schema",schema))));
+                "model",model,"store",false,"max_output_tokens",maxOutputTokens,
+                "reasoning",Map.of("effort",reasoningEffort),
+                "instructions",instructions,
+                "input",List.of(Map.of("role","user","content",content)),
+                "text",Map.of("format",Map.of("type","json_schema","name",schemaName,"strict",true,"schema",schema))));
             if(body.getBytes(StandardCharsets.UTF_8).length>19_000_000) throw new ModelException(INVALID_RESPONSE);
             var request=HttpRequest.newBuilder(endpoint).timeout(timeout)
-                    .header("Authorization","Bearer "+apiKey).header("Content-Type","application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+                .header("Authorization","Bearer "+apiKey).header("Content-Type","application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build();
             var response=http.send(request,HttpResponse.BodyHandlers.ofString());
             int status=response.statusCode();
             if(status==401 || status==403) throw new ModelException(AUTHENTICATION);

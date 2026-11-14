@@ -21,7 +21,7 @@ public class WithdrawalService {
     @Transactional(timeout = 30)
     public void withdraw(Long userId) {
         var user = users.findForUpdateById(userId).filter(value -> "ACTIVE".equals(value.getStatus()))
-                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED,"로그인이 필요합니다."));
+            .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED,"로그인이 필요합니다."));
         try {
             var targets = owned.lockAndCollect(userId);
             storage.deleteAll(targets);

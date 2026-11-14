@@ -34,8 +34,8 @@ public class UserController {
     private final com.trueket.backend.analyze.service.AnalysisSessionStore analyses;
 
     public UserController(UserService users, AuthService auth,
-                          com.trueket.backend.user.service.WithdrawalService withdrawal,
-                          com.trueket.backend.analyze.service.AnalysisSessionStore analyses) {
+            com.trueket.backend.user.service.WithdrawalService withdrawal,
+            com.trueket.backend.analyze.service.AnalysisSessionStore analyses) {
         this.users = users;
         this.auth = auth;
         this.withdrawal = withdrawal;
@@ -52,9 +52,9 @@ public class UserController {
             analyses.deleteByOwner(owner);
         }
         new org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler()
-                .logout(request,response,authentication);
+            .logout(request,response,authentication);
         new org.springframework.security.web.authentication.logout.CookieClearingLogoutHandler("JSESSIONID")
-                .logout(request,response,authentication);
+            .logout(request,response,authentication);
         response.setHeader("Cache-Control","no-store");
     }
 

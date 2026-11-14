@@ -153,7 +153,7 @@ public class AuthService {
 
     private PhoneVerification challenge(String phone, Long id, String purpose, OffsetDateTime expectedExpiry) {
         PhoneVerification verification = verifications.findByPhoneHashAndPurpose(
-                        privacy.hash(privacy.normalize(phone)), purpose)
+                privacy.hash(privacy.normalize(phone)), purpose)
                 .orElseThrow(() -> error("인증번호를 먼저 받아 주세요"));
         if (!verification.getId().equals(id) || verification.getConsumedAt() != null) {
             throw error("유효하지 않은 인증 요청입니다.");

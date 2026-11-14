@@ -28,7 +28,7 @@ public class AnalyzeController {
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<AnalyzeResponse> analyze(@RequestParam(value = "captures", required = false) List<MultipartFile> captures,
-                                                   @RequestParam(value = "additionalInfo", defaultValue = "") String additionalInfo, HttpServletRequest request) {
+            @RequestParam(value = "additionalInfo", defaultValue = "") String additionalInfo, HttpServletRequest request) {
         var session = request.getSession();
         UUID owner = (UUID) session.getAttribute("analysisOwner");
         if (owner == null) {

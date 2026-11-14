@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRUEKET 인증 시연</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;background:#f6f3ff;color:#222;margin:0;padding:28px 16px}main{max-width:520px;margin:auto}section{background:white;border:1px solid #ddd5f0;border-radius:16px;padding:20px;margin:18px 0}h1{font-size:25px}h2{font-size:18px;margin-top:0}label{display:block;margin:12px 0}input:not([type=checkbox]){display:block;box-sizing:border-box;width:100%;padding:12px;border:1px solid #aaa;border-radius:8px;font:inherit}button{font:inherit;background:#5330d8;color:white;border:0;border-radius:8px;padding:12px 18px;cursor:pointer}button:disabled{opacity:.5}#receipt{background:#eee9ff;padding:14px;border-radius:8px;margin-top:16px}#sms-code{font-size:28px;letter-spacing:4px}#status{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#555}
+</style>
+<main>
+<h1>TRUEKET 휴대폰 인증 시연</h1>
+<p><strong>실제 문자는 발송되지 않습니다.</strong><br>문자 전송을 아래 테스트 수신함으로 대체합니다. 실제 휴대폰 소유 확인을 제공하지 않습니다. 테스트용 번호와 비밀번호를 사용해 주세요.</p>
+<section>
+<h2>1. 인증번호 받기</h2>
+<label>휴대폰 번호<input id="phone" type="tel" autocomplete="off" placeholder="01012345678"></label>
+<button id="send" type="button">인증번호 받기</button>
+<div id="receipt" hidden><strong>시연용 문자 수신함</strong><div id="recipient"></div><div id="sms-code"></div><small>3분 유효 · 재발급은 60초 후 가능 · 오입력 5회 제한</small></div>
+</section>
+<section>
+<h2>2. 받은 코드 확인</h2>
+<label>인증번호<input id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="수신함의 숫자 6자리"></label>
+<button id="verify" type="button" disabled>인증 확인</button>
+</section>
+<section>
+<h2>3. 회원가입 확인</h2>
+<label>이메일<input id="email" type="email" autocomplete="off" placeholder="test@example.com"></label>
+<label>비밀번호<input id="password" type="password" autocomplete="new-password" placeholder="8자 이상, 영문·숫자 조합"></label>
+<label><input id="consent" type="checkbox"> 개인정보 정책에 동의합니다.</label>
+<small>인증 시연용 화면입니다. 서비스 개인정보 정책은 팀 기획 자료를 확인해 주세요.</small><br>
+<button id="signup" type="button" disabled>회원가입 테스트</button>
+</section>
+<section aria-live="polite"><h2>진행 결과</h2><div id="status">전화번호를 입력하고 인증번호 받기를 눌러 주세요.</div></section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let verificationId = null;
+let issuedPhone = null;
+let pending = false;
+async function post(path, data) {
+  const csrfResponse = await fetch('/auth/csrf', {credentials:'same-origin',cache:'no-store'});
+  if (!csrfResponse.ok) throw new Error('인증 세션을 준비하지 못했습니다. 새로고침해 주세요.');
+  const csrf = await csrfResponse.json();
+  const response = await fetch(path, {method:'POST',credentials:'same-origin',cache:'no-store',
+    headers:{'Content-Type':'application/json',[csrf.headerName]:csrf.token},body:JSON.stringify(data)});
+  const text = await response.text();
+  let body = {};
+  try { body = text ? JSON.parse(text) : {}; } catch {}
+  if (!response.ok) throw new Error(body.message || '요청 실패 (' + response.status + ')');
+  return body;
+}
+async function run(action) {
+  if (pending) return;
+  pending = true;
+  try { await action(); } catch (error) { $('status').textContent = error.message; }
+  finally { pending = false; }
+}
+$('send').onclick = () => run(async () => {
+  // A failed resend must not leave a previous code displayed as the latest delivery.
+  $('receipt').hidden = true;
+  $('sms-code').textContent = '';
+  $('verify').disabled = true;
+  $('signup').disabled = true;
+  const phone = $('phone').value;
+  const sent = await post('/auth/phone/send', {phone});
+  verificationId = sent.verificationId;
+  issuedPhone = phone;
+  if (!sent.demoSms) throw new Error('시연 수신함을 사용할 수 없는 환경입니다.');
+  $('recipient').textContent = '수신 번호: ' + sent.demoSms.maskedPhone;
+  $('sms-code').textContent = sent.demoSms.code;
+  $('receipt').hidden = false;
+  $('code').value = '';
+  $('verify').disabled = false;
+  $('status').textContent = '새 인증번호를 생성했습니다. 수신함의 코드를 직접 입력해 주세요.';
+});
+$('verify').onclick = () => run(async () => {
+  await post('/auth/phone/verify', {phone:issuedPhone,verificationId,code:$('code').value});
+  $('signup').disabled = false;
+  $('status').textContent = '인증 완료. 유효시간 안에 회원가입을 진행해 주세요.';
+});
+$('signup').onclick = () => run(async () => {
+  const user = await post('/auth/signup', {email:$('email').value,password:$('password').value,
+    phone:issuedPhone,verificationId,privacyConsent:$('consent').checked});
+  $('password').value = '';
+  $('sms-code').textContent = '';
+  $('receipt').hidden = true;
+  $('signup').disabled = true;
+  $('verify').disabled = true;
+  $('status').textContent = '회원가입 및 로그인 완료. 사용자 ID: ' + user.id + ', 번호 뒷자리: ' + user.phoneLast4;
+});
+$('phone').oninput = () => {
+  $('verify').disabled = true;
+  $('signup').disabled = true;
+  $('receipt').hidden = true;
+  $('sms-code').textContent = '';
+};
+</script>
+</html>
