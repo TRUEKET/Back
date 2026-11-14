@@ -243,7 +243,7 @@ public class ReportCreationService {
             );
         }
 
-        // 현재 AnalysisReportSource에는 finalStage,
+        // 현재 AnalysisReportSource에는
         // showReportButton, raisedByReports가 포함되어 있지 않음.
         //
         // 따라서 SAFE 단계 신고 금지 및
