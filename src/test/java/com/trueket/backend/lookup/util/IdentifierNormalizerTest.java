@@ -2,6 +2,7 @@
 package com.trueket.backend.lookup.util;
 
 import com.trueket.backend.identifier.entity.enums.IdentifierType;
+import com.trueket.backend.identifier.util.IdentifierNormalizer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

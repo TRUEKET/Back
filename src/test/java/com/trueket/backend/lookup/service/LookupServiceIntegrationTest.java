@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.trueket.backend.identifier.entity.Identifier;
 import com.trueket.backend.identifier.entity.enums.IdentifierType;
 import com.trueket.backend.lookup.dto.LookupResponse;
-import com.trueket.backend.lookup.util.IdentifierHashService;
+import com.trueket.backend.identifier.util.IdentifierHashService;
 import com.trueket.backend.report.entity.Report;
 import com.trueket.backend.lookup.dto.LookupCompareResponse;
 import com.trueket.backend.global.exception.BusinessException;
@@ -28,7 +28,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
-import java.util.List;
 
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

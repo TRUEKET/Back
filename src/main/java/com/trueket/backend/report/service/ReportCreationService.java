@@ -12,8 +12,8 @@ import com.trueket.backend.identifier.entity.enums.IdentifierType;
 import com.trueket.backend.identifier.repository.IdentifierRepository;
 import com.trueket.backend.identifier.service.IdentifierEncryptionService;
 import com.trueket.backend.identifier.util.IdentifierMasker;
-import com.trueket.backend.lookup.util.IdentifierHashService;
-import com.trueket.backend.lookup.util.IdentifierNormalizer;
+import com.trueket.backend.identifier.util.IdentifierHashService;
+import com.trueket.backend.identifier.util.IdentifierNormalizer;
 import com.trueket.backend.report.dto.ReportCreateRequest;
 import com.trueket.backend.report.dto.ReportCreateResponse;
 import com.trueket.backend.report.entity.Report;
@@ -31,9 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.Map;
 

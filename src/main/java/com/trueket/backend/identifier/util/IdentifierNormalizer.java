@@ -1,5 +1,5 @@
 
-package com.trueket.backend.lookup.util;
+package com.trueket.backend.identifier.util;
 
 import com.trueket.backend.identifier.entity.enums.IdentifierType;
 
