@@ -34,7 +34,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Stream;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -88,38 +89,70 @@ public class ReportCreationService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
 
-        // 4. JD 식별자 목록 결합
-        List<String> rawIdentifiers = Stream.of(
-                        source.identifiers().accounts(),
-                        source.identifiers().phones(),
-                        source.identifiers().xAccounts()
-                )
-                .flatMap(List::stream)
-                .toList();
 
-        // 5. 정규화 및 중복 제거
+        // 4. JD 식별자를 종류별로 정규화
         List<IdentifierNormalizer.NormalizedIdentifier> normalized =
                 new ArrayList<>();
 
-        Set<String> unique = new HashSet<>();
+        // 계좌번호
+        for (String account : source.identifiers().accounts()) {
+            addNormalizedIdentifier(
+                    normalized,
+                    account,
+                    IdentifierType.ACCOUNT
+            );
+        }
 
-        for (String raw : rawIdentifiers) {
-            IdentifierNormalizer.NormalizedIdentifier item =
-                    IdentifierNormalizer.normalize(raw);
+        // 전화번호
+        for (String phone : source.identifiers().phones()) {
+            addNormalizedIdentifier(
+                    normalized,
+                    phone,
+                    IdentifierType.PHONE
+            );
+        }
 
+        // X 계정
+        for (String xAccount : source.identifiers().xAccounts()) {
+            String value = xAccount == null
+                    ? null
+                    : xAccount.trim();
+
+            if (value != null && !value.startsWith("@")) {
+                value = "@" + value;
+            }
+
+            addNormalizedIdentifier(
+                    normalized,
+                    value,
+                    IdentifierType.SNS
+            );
+        }
+
+        // 5. 정규화된 식별자 중복 제거
+        Map<String, IdentifierNormalizer.NormalizedIdentifier> unique =
+                new LinkedHashMap<>();
+
+        for (var item : normalized) {
             String hash = identifierHashService.hash(
                     item.type(),
                     item.value()
             );
 
-            if (unique.add(item.type().name() + ":" + hash)) {
-                normalized.add(item);
-            }
+            unique.putIfAbsent(
+                    item.type().name() + ":" + hash,
+                    item
+            );
         }
 
+        normalized = new ArrayList<>(unique.values());
+
         if (normalized.isEmpty()) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST
+            );
         }
+
 
         // 6. 동일 신고자의 동일 계좌 피해 신고 중복 확인
         if (request.kind() == ReportKind.FRAUD) {
@@ -256,4 +289,35 @@ public class ReportCreationService {
                 ErrorCode.ANALYSIS_NOT_AVAILABLE
         );
     }
+
+
+    private void addNormalizedIdentifier(
+            List<IdentifierNormalizer.NormalizedIdentifier> result,
+            String raw,
+            IdentifierType expectedType
+    ) {
+        if (raw == null || raw.isBlank()) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST
+            );
+        }
+
+        try {
+            var item = IdentifierNormalizer.normalize(raw);
+
+            if (item.type() != expectedType) {
+                throw new BusinessException(
+                        ErrorCode.INVALID_REQUEST
+                );
+            }
+
+            result.add(item);
+
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST
+            );
+        }
+    }
+
 }
