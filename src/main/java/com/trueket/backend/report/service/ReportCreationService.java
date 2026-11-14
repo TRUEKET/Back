@@ -359,6 +359,7 @@ public class ReportCreationService {
             String raw,
             IdentifierType expectedType
     ) {
+        log.info("RP-04 식별자 정규화 시작: expectedType={}", expectedType);
         if (raw == null || raw.isBlank()) {
             throw new BusinessException(
                     ErrorCode.INVALID_REQUEST
@@ -367,6 +368,7 @@ public class ReportCreationService {
 
         try {
             var item = IdentifierNormalizer.normalize(raw);
+            log.info("RP-04 식별자 정규화 결과: actualType={}", item.type());
 
             if (item.type() != expectedType) {
                 throw new BusinessException(
@@ -377,6 +379,7 @@ public class ReportCreationService {
             result.add(item);
 
         } catch (IllegalArgumentException e) {
+            log.warn("RP-04 식별자 정규화 실패: expectedType={}", expectedType, e);
             throw new BusinessException(
                     ErrorCode.INVALID_REQUEST
             );

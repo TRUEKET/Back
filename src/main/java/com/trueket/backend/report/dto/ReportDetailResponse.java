@@ -8,6 +8,7 @@ import com.trueket.backend.report.entity.enums.TradeType;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 public record ReportDetailResponse(
@@ -15,12 +16,13 @@ public record ReportDetailResponse(
         ReportKind kind,
         ReportStatus status,
         TradeType tradeType,
-        JsonNode evidenceQuotes,
-        JsonNode referenceLinks,
+        Object evidenceQuotes,
+        Object referenceLinks,
         LocalDate sentDate,
         OffsetDateTime createdAt,
         List<ReportIdentifierResponse> identifiers
 ) {
+
     public static ReportDetailResponse from(
             Report report,
             List<ReportIdentifierResponse> identifiers
@@ -30,11 +32,73 @@ public record ReportDetailResponse(
                 report.getKind(),
                 report.getStatus(),
                 report.getTradeType(),
-                report.getEvidenceQuotes(),
-                report.getReferenceLinks(),
+                convertJsonNode(report.getEvidenceQuotes()),
+                convertJsonNode(report.getReferenceLinks()),
                 report.getSentDate(),
                 report.getCreatedAt(),
                 List.copyOf(identifiers)
         );
+    }
+
+    private static Object convertJsonNode(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return List.of();
+        }
+
+        if (node.isArray()) {
+            List<Object> result = new ArrayList<>();
+
+            for (JsonNode item : node) {
+                result.add(convertValue(item));
+            }
+
+            return result;
+        }
+
+        return convertValue(node);
+    }
+
+    private static Object convertValue(JsonNode node) {
+        if (node.isTextual()) {
+            return node.asText();
+        }
+
+        if (node.isBoolean()) {
+            return node.asBoolean();
+        }
+
+        if (node.isNumber()) {
+            return node.numberValue();
+        }
+
+        if (node.isNull()) {
+            return null;
+        }
+
+        if (node.isArray()) {
+            List<Object> result = new ArrayList<>();
+
+            for (JsonNode item : node) {
+                result.add(convertValue(item));
+            }
+
+            return result;
+        }
+
+        if (node.isObject()) {
+            java.util.Map<String, Object> result =
+                    new java.util.LinkedHashMap<>();
+
+            node.fields().forEachRemaining(entry ->
+                    result.put(
+                            entry.getKey(),
+                            convertValue(entry.getValue())
+                    )
+            );
+
+            return result;
+        }
+
+        return node.asText();
     }
 }

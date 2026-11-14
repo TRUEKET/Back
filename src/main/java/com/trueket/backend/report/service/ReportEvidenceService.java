@@ -12,6 +12,7 @@ import com.trueket.backend.report.dto.ReportEvidenceResponse;
 
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -21,6 +22,7 @@ import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReportEvidenceService {
@@ -62,6 +64,7 @@ public class ReportEvidenceService {
                 .anyMatch(targetAccount::equals);
 
         if (!accountExists) {
+            log.warn("RP-05 실패: JD 판독 결과에 신고 계좌 없음");
             throw invalidEvidence();
         }
 
@@ -74,8 +77,18 @@ public class ReportEvidenceService {
         // 7. AI-03 분석
         ReportEvidenceAnalysis analysis = aiService.analyze(image);
 
+        log.info(
+                "RP-05 AI 분석 결과: transferCompleted={}, bankPresent={}, accountPresent={}, boxPresent={}, confidence={}",
+                analysis.transferCompleted(),
+                analysis.bank() != null,
+                analysis.accountNumber() != null,
+                analysis.accountBox() != null,
+                analysis.confidence()
+        );
+
         // 8. 송금 완료 화면 여부 확인
         if (!analysis.transferCompleted()) {
+            log.warn("RP-05 실패: 송금 완료 화면으로 인식하지 못함");
             throw invalidEvidence();
         }
 
@@ -91,9 +104,12 @@ public class ReportEvidenceService {
 
         // 10. 신고 대상 계좌와 일치 여부 확인
         if (!Objects.equals(targetAccount, detectedAccount)) {
+            log.warn("RP-05 실패: 신고 계좌와 이미지 계좌 불일치");
             throw invalidEvidence();
         }
 
+        log.info("RP-05 계좌 영역 좌표 존재 여부: {}",
+                analysis.accountBox() != null);
         // 11. 계좌번호 위치 좌표 검증
         validateBoundingBox(analysis.accountBox());
         // 12. 수취 계좌번호 영역만 추출

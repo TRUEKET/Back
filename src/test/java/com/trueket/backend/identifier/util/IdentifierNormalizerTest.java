@@ -1,12 +1,12 @@
 
-package com.trueket.backend.lookup.util;
+package com.trueket.backend.identifier.util;
 
 import com.trueket.backend.identifier.entity.enums.IdentifierType;
-import com.trueket.backend.identifier.util.IdentifierNormalizer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 class IdentifierNormalizerTest {
 
@@ -217,5 +217,49 @@ class IdentifierNormalizerTest {
                 IdentifierNormalizer.normalize("@Trueket!")
         )
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 같은_계좌의_은행명_표기가_달라도_동일하게_정규화된다() {
+        var shortName = IdentifierNormalizer.normalize(
+                "신한 110-123-456789"
+        );
+
+        var fullName = IdentifierNormalizer.normalize(
+                "신한은행 110-123-456789"
+        );
+
+        assertEquals(shortName, fullName);
+        assertEquals(IdentifierType.ACCOUNT, fullName.type());
+        assertEquals("SHINHAN:110123456789", fullName.value());
+    }
+
+    @Test
+    void 공식_은행명을_인식한다() {
+        var result = IdentifierNormalizer.normalize(
+                "KB국민은행 123-456-789012"
+        );
+
+        assertEquals("KB:123456789012", result.value());
+    }
+
+    @Test
+    void 은행명이_없는_계좌는_거부한다() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> IdentifierNormalizer.normalize(
+                        "110-123-456789"
+                )
+        );
+    }
+
+    @Test
+    void 마스킹된_계좌는_거부한다() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> IdentifierNormalizer.normalize(
+                        "신한은행 ***1111"
+                )
+        );
     }
 }
