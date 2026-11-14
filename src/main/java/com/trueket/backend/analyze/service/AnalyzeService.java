@@ -69,7 +69,8 @@ public class AnalyzeService {
         var assessment = chat.assess(new AnalysisInput(type, result.typeMismatch(), sentences, signals));
         var masked = redactor.redact(assessment, result);
         FinalAssessment finalAssessment = stages.combine(masked, reports.lookup(result.extracted()));
-        UUID id = sessions.save(owner, new AnalysisSessionStore.Snapshot(result, images));
+        UUID id = sessions.save(owner, new AnalysisSessionStore.Snapshot(result, images,
+                finalAssessment.showReportButton(), finalAssessment.showSuspicionReport()));
         return new AnalyzeResponse(id, true, type, finalAssessment, redactor.identifiers(result),
                 redactor.text(result.otherSuspicious(), result), null, conversations.summarize(images.size(), result, masked));
     }

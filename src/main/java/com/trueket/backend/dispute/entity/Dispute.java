@@ -28,8 +28,8 @@ public class Dispute {
     @Column(name = "receipt_no", nullable = false, unique = true)
     private String receiptNo;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "identifier_id", nullable = false, unique = true)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "identifier_id", nullable = false)
     private Identifier identifier;
 
     @Enumerated(EnumType.STRING)
@@ -80,8 +80,15 @@ public class Dispute {
         return dispute;
     }
 
-    // 명의도용 검토 결과 등록
     public void resolve(ImpersonationResult result) {
+        if (result == null) {
+            throw new IllegalArgumentException("검토 결과가 필요합니다.");
+        }
+
+        if (this.resolvedAt != null) {
+            throw new IllegalStateException("이미 검토가 완료된 이의제기입니다.");
+        }
+
         this.impersonationResult = result;
         this.resolvedAt = OffsetDateTime.now();
     }

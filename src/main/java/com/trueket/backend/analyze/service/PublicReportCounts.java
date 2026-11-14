@@ -36,7 +36,7 @@ public class PublicReportCounts {
                        COUNT(DISTINCT CASE WHEN r.kind = 'SUSPICION' THEN r.reporter_hash END) AS suspect_people
                 FROM identifiers i
                 LEFT JOIN report_identifiers ri ON ri.identifier_id = i.id AND ri.hidden = false
-                LEFT JOIN reports r ON r.id = ri.report_id AND r.status = 'PUBLISHED'
+                LEFT JOIN reports r ON r.id = ri.report_id AND r.status IN ('PUBLISHED', 'RESPONDING', 'REVIEWING')
                     AND r.created_at >= :since AND r.created_at <= :asOf
                 WHERE i.id IN (:ids)
                 GROUP BY i.id

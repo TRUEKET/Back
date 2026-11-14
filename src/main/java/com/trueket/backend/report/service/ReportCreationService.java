@@ -321,10 +321,12 @@ public class ReportCreationService {
         );
     }
 
+
     private void validateAnalysis(
             AnalysisReportSource source,
             ReportKind kind
     ) {
+        // 1. 필수 판독 데이터 검증
         if (source == null
                 || kind == null
                 || source.identifiers() == null
@@ -334,19 +336,22 @@ public class ReportCreationService {
             );
         }
 
-        // 현재 AnalysisReportSource에는
-        // showReportButton, raisedByReports가 포함되어 있지 않음.
-        //
-        // 따라서 SAFE 단계 신고 금지 및
-        // 신고 목록만으로 상승한 의심 제보 금지를
-        // 서버에서 검증할 수 없는 상태.
-        //
-        // JD 반환 계약이 보완되기 전까지
-        // 신고 DB 저장을 허용하지 않음.
-        throw new BusinessException(
-                ErrorCode.ANALYSIS_NOT_AVAILABLE
-        );
+        // 2. 신고 등록이 허용되지 않은 판독 결과
+        if (!source.showReportButton()) {
+            throw new BusinessException(
+                    ErrorCode.REPORT_NOT_ALLOWED
+            );
+        }
+
+        // 3. 의심 제보는 대화 자체에 의심 신호가 있어야 함
+        if (kind == ReportKind.SUSPICION
+                && !source.showSuspicionReport()) {
+            throw new BusinessException(
+                    ErrorCode.REPORT_NOT_ALLOWED
+            );
+        }
     }
+
 
 
     private void addNormalizedIdentifier(

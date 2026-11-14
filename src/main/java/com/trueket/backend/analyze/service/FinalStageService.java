@@ -20,7 +20,7 @@ public class FinalStageService {
                 .filter(target -> target.stage() == reportStage && reportStage != Stage.SAFE)
                 .map(ReportLookup.Target::identifierId).distinct().toList();
         String warning = lookup.available() ? null
-                : "신고 기록을 불러오지 못했어요. 단계는 대화만 보고 정했어요";
+                : "일부 신고 기록을 확인하지 못했어요. 확인된 신고와 대화만 반영했어요";
         return new FinalAssessment(chat, reportStage, finalStage, reportsFirst ? Source.REPORTS : Source.CHAT,
                 reportStage.ordinal() > chat.stage().ordinal(), identifiers,
                 chat.stage() != Stage.SAFE, finalStage != Stage.SAFE,

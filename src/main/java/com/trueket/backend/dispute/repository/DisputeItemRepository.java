@@ -3,7 +3,10 @@ package com.trueket.backend.dispute.repository;
 import com.trueket.backend.dispute.entity.DisputeItem;
 import com.trueket.backend.dispute.entity.enums.DisputeItemStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,4 +29,37 @@ public interface DisputeItemRepository
     List<DisputeItem> findAllByDispute_Id(Long disputeId);
 
     void deleteAllByReport_Id(Long reportId);
+
+    // 이의제기를 한 번이라도 받은 신고인지 확인
+    boolean existsByReport_Id(Long reportId);
+
+    @Query("""
+    SELECT CASE WHEN COUNT(di) > 0 THEN true ELSE false END
+    FROM DisputeItem di
+    WHERE di.report.id = :reportId
+      AND di.dispute.identifier.id = :identifierId
+    """)
+    boolean existsByReportAndIdentifier(
+            @Param("reportId") Long reportId,
+            @Param("identifierId") Long identifierId
+    );
+    
+    // 특정 식별자의 이의제기 처리 중인 항목 존재 여부
+    @Query("""
+    SELECT CASE WHEN COUNT(di) > 0 THEN true ELSE false END
+    FROM DisputeItem di
+    WHERE di.dispute.identifier.id = :identifierId
+      AND di.status IN :statuses
+    """)
+    boolean existsProcessingItem(
+            @Param("identifierId") Long identifierId,
+            @Param("statuses") List<DisputeItemStatus> statuses
+    );
+
+    // 3일 무응답으로 만료된 항목 조회
+    List<DisputeItem> findAllByStatusAndDeadlineLessThanEqual(
+            DisputeItemStatus status,
+            OffsetDateTime now
+    );
+
 }

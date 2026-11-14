@@ -6,9 +6,7 @@ import java.util.Objects;
 public record ReportLookup(boolean available, List<Target> targets) {
     public ReportLookup {
         targets = List.copyOf(targets);
-        if (!available && !targets.isEmpty()) {
-            throw new IllegalArgumentException("조회 실패 시 신고 집계를 사용할 수 없습니다.");
-        }
+        // available=false means incomplete lookup; confirmed targets may still raise the stage.
     }
 
     public record Target(String identifierId, long damagePeople, long suspectPeople) {
