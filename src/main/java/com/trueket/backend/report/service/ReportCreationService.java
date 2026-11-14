@@ -1,7 +1,10 @@
+
 package com.trueket.backend.report.service;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.trueket.backend.analyze.dto.AnalysisReportSource;
+import com.trueket.backend.analyze.service.AnalysisReportSourceService;
 import com.trueket.backend.global.exception.BusinessException;
 import com.trueket.backend.global.exception.ErrorCode;
 import com.trueket.backend.identifier.entity.Identifier;
@@ -22,6 +25,7 @@ import com.trueket.backend.user.entity.User;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +34,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -41,23 +46,31 @@ public class ReportCreationService {
     private final IdentifierRepository identifierRepository;
     private final IdentifierHashService identifierHashService;
     private final IdentifierEncryptionService encryptionService;
-    private final AnalysisVerificationGateway analysisGateway;
+
+    // JD 판독 결과 조회 서비스
+    private final AnalysisReportSourceService analysisReportSourceService;
 
     @Transactional
     public ReportCreateResponse create(
             Long authenticatedUserId,
-            ReportCreateRequest request
+            ReportCreateRequest request,
+            HttpSession session
     ) {
-        // 1. 서버에서 판독 결과 검증
-        AnalysisVerificationGateway.VerifiedAnalysis verified =
-                analysisGateway.verify(
-                        authenticatedUserId,
-                        request.analysisProof()
+        // 1. JD 판독 결과 조회 및 소유권 검증
+        AnalysisReportSource source =
+                analysisReportSourceService.load(
+                        request.analysisId(),
+                        session
                 );
 
-        validateAnalysis(verified);
+        if (source.userId() != authenticatedUserId.longValue()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
 
-        // 2. 사용자 조회 및 중복 생성 방지를 위한 잠금
+        // 2. 신고 가능 여부 검증
+        validateAnalysis(source, request.kind());
+
+        // 3. 사용자 조회 및 중복 신고 방지를 위한 잠금
         User user = entityManager.find(
                 User.class,
                 authenticatedUserId,
@@ -75,13 +88,22 @@ public class ReportCreationService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
 
-        // 3. 검증된 식별자 정규화 및 중복 제거
+        // 4. JD 식별자 목록 결합
+        List<String> rawIdentifiers = Stream.of(
+                        source.identifiers().accounts(),
+                        source.identifiers().phones(),
+                        source.identifiers().xAccounts()
+                )
+                .flatMap(List::stream)
+                .toList();
+
+        // 5. 정규화 및 중복 제거
         List<IdentifierNormalizer.NormalizedIdentifier> normalized =
                 new ArrayList<>();
 
         Set<String> unique = new HashSet<>();
 
-        for (String raw : verified.identifiers()) {
+        for (String raw : rawIdentifiers) {
             IdentifierNormalizer.NormalizedIdentifier item =
                     IdentifierNormalizer.normalize(raw);
 
@@ -99,8 +121,8 @@ public class ReportCreationService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 
-        // 4. 동일 신고자의 동일 계좌 피해 신고 중복 확인
-        if (verified.kind() == ReportKind.FRAUD) {
+        // 6. 동일 신고자의 동일 계좌 피해 신고 중복 확인
+        if (request.kind() == ReportKind.FRAUD) {
             for (var item : normalized) {
                 if (item.type() != IdentifierType.ACCOUNT) {
                     continue;
@@ -127,28 +149,32 @@ public class ReportCreationService {
             }
         }
 
-        // 5. 신고 생성
+        // 7. JD 근거 말풍선 저장
+        ArrayNode evidenceQuotesJson =
+                JsonNodeFactory.instance.arrayNode();
+
+        for (var evidence : source.evidence()) {
+            evidenceQuotesJson.add(evidence.quote());
+        }
+
+        // 8. 참고 링크 저장
         List<String> links = request.referenceLinks() == null
                 ? List.of()
                 : request.referenceLinks();
 
-        ArrayNode evidenceQuotesJson = JsonNodeFactory.instance.arrayNode();
-
-        for (String quote : verified.evidenceQuotes()) {
-            evidenceQuotesJson.add(quote);
-        }
-
-        ArrayNode referenceLinksJson = JsonNodeFactory.instance.arrayNode();
+        ArrayNode referenceLinksJson =
+                JsonNodeFactory.instance.arrayNode();
 
         for (String link : links) {
             referenceLinksJson.add(link);
         }
 
+        // 9. 신고 생성
         Report report = Report.create(
                 user,
                 user.getPhoneHash(),
-                verified.kind(),
-                request.tradeType(),
+                request.kind(),
+                source.tradeType(),
                 evidenceQuotesJson,
                 referenceLinksJson,
                 request.sentDate()
@@ -156,7 +182,7 @@ public class ReportCreationService {
 
         reportRepository.saveAndFlush(report);
 
-        // 6. 식별자 조회 또는 생성
+        // 10. 식별자 조회 또는 생성
         List<Long> identifierIds = new ArrayList<>();
 
         for (var item : normalized) {
@@ -182,7 +208,7 @@ public class ReportCreationService {
                             )
                     ));
 
-            // 7. 신고와 식별자 연결
+            // 11. 신고-식별자 연결
             reportIdentifierRepository.save(
                     ReportIdentifier.create(
                             report,
@@ -195,7 +221,7 @@ public class ReportCreationService {
 
         reportIdentifierRepository.flush();
 
-        // 8. 응답
+        // 12. 응답
         return new ReportCreateResponse(
                 report.getId(),
                 report.getKind(),
@@ -205,24 +231,29 @@ public class ReportCreationService {
     }
 
     private void validateAnalysis(
-            AnalysisVerificationGateway.VerifiedAnalysis verified
+            AnalysisReportSource source,
+            ReportKind kind
     ) {
-        if (verified == null
-                || verified.kind() == null
-                || !verified.reportable()
-                || verified.identifiers() == null
-                || verified.identifiers().isEmpty()
-                || verified.evidenceQuotes() == null) {
+        if (source == null
+                || kind == null
+                || source.identifiers() == null
+                || source.evidence() == null) {
             throw new BusinessException(
                     ErrorCode.REPORT_NOT_ALLOWED
             );
         }
 
-        if (verified.kind() == ReportKind.SUSPICION
-                && verified.suspicionFromListOnly()) {
-            throw new BusinessException(
-                    ErrorCode.REPORT_NOT_ALLOWED
-            );
-        }
+        // 현재 AnalysisReportSource에는 finalStage,
+        // showReportButton, raisedByReports가 포함되어 있지 않음.
+        //
+        // 따라서 SAFE 단계 신고 금지 및
+        // 신고 목록만으로 상승한 의심 제보 금지를
+        // 서버에서 검증할 수 없는 상태.
+        //
+        // JD 반환 계약이 보완되기 전까지
+        // 신고 DB 저장을 허용하지 않음.
+        throw new BusinessException(
+                ErrorCode.ANALYSIS_NOT_AVAILABLE
+        );
     }
 }
