@@ -31,7 +31,7 @@ criteria는 A~F의 신호 세기를 별도로 표현한다. 주의 조합이나 
 
 `FinalStageService.combine(chat, lookup)`은 식별자별 피해 신고 한 명 이상을 DANGER, 의심 제보 두 명 이상을 SUSPECT로 계산한 뒤 가장 높은 단계를 사용한다. 다른 식별자의 인원을 더하지 않는다. 대화와 신고 중 높은 것이 finalStage이고 동률인 유효 신고가 있으면 explanationSource는 REPORTS다.
 
-ReportLookup.Target 인원은 신고 담당의 서버 조회 결과여야 한다. 최근 1년, 서로 다른 reporter_hash, 공개 상태, 명의도용 hidden 제외, 전체 식별자 정확 일치 조건은 신고 조회 모듈에서 적용한다. 이 모듈은 DB를 직접 조회하지 않는다.
+ReportLookup.Target 인원은 서버 집계 결과다. AnalysisReportLookup은 신고 공통 정규화·HMAC과 유형으로 전체 식별자를 정확 매칭한다. PublicReportCounts는 최근 1년 created_at, 서로 다른 reporter_hash, PUBLISHED·RESPONDING·REVIEWING 상태, hidden 제외 조건을 적용한다 (#37). 형식 불명확 시 available=false 경고를 반환하면서 확인된 집계는 보존한다. FinalStageService 자체는 DB를 조회하지 않는다.
 
 조회 실패는 available=false·targets 빈 목록으로 전달한다. 이 경우 대화 단계와 실패 안내를 반환한다. 조회 성공·이력 없음은 available=true·빈 목록이다.
 

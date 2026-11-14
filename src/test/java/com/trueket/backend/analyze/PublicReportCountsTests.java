@@ -67,7 +67,7 @@ class PublicReportCountsTests {
     }
     @Test void excludesHiddenNonPublicOldAndFutureRecords() {
         for (var status : ReportStatus.values()) {
-            if (status != ReportStatus.PUBLISHED)
+            if (status == ReportStatus.PRIVATE)
                 report(a,status.name(),ReportKind.FRAUD,status,now,false);
         }
         report(a,"hidden",ReportKind.FRAUD,ReportStatus.PUBLISHED,now,true);
@@ -76,6 +76,13 @@ class PublicReportCountsTests {
         report(a,"boundary",ReportKind.SUSPICION,ReportStatus.PUBLISHED,now.minusYears(1),false);
         var result = counts.count(List.of(a.getId()),now).get(0);
         assertEquals(0,result.damagePeople());
+        assertEquals(1,result.suspectPeople());
+    }
+    @Test void countsRespondingAndReviewingLikePublicLookup() {
+        report(a,"responding",ReportKind.FRAUD,ReportStatus.RESPONDING,now,false);
+        report(a,"reviewing",ReportKind.SUSPICION,ReportStatus.REVIEWING,now,false);
+        var result=counts.count(List.of(a.getId()),now).get(0);
+        assertEquals(1,result.damagePeople());
         assertEquals(1,result.suspectPeople());
     }
     @Test void returnsZeroForKnownUnreportedIdAndOmitsUnknownId() {

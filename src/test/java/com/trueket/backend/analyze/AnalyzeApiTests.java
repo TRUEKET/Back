@@ -52,7 +52,7 @@ class AnalyzeApiTests {
         service = new AnalyzeService(new CaptureProcessor(), new AnalysisPrompt(),
                 new GeminiClient("fake-test-key", "test-model", "http://127.0.0.1:" + server.getAddress().getPort(), "low"),
                 new ModelExtractionParser(), new ChatStageService(new SignalDictionary()), new FinalStageService(),
-                new AnalysisReportLookup(), new AnalysisRedactor(), store, new ConversationDetailsService(), Duration.ofSeconds(2));
+                org.mockito.Mockito.mock(AnalysisReportLookup.class, invocation -> new com.trueket.backend.analyze.dto.ReportLookup(false, List.of())), new AnalysisRedactor(), store, new ConversationDetailsService(), Duration.ofSeconds(2));
     }
     @AfterEach void cleanup() { server.stop(0); }
 
