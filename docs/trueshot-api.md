@@ -99,7 +99,7 @@ Postman의 multipart Content-Type과 boundary는 자동 설정을 사용한다.
 {"number":2,"phase":"JUDGING","accepted":true,"deadline":null,"retryReasons":[]}
 ```
 
-`accepted`는 접수 성공이다. 최종 판정은 아직 연결되지 않았으며 재제출할 수 없다. 업로드 마감 검사에 별도의 전송 유예 초는 없다.
+`accepted`는 접수 성공이다. 2차 사진은 최종 판정까지 연결하며 재제출할 수 없다. 2차 제출에는 사진과 같은 이미지의 MediaPipe 결과를 analysis JSON part로 함께 보내야 한다. 외부 서비스 장애 시 JUDGING으로 접수 결과를 반환하고 동일 원본으로 재시도한다. 상세 계약은 [최종 판정·공유 API](trueshot-finalization-api.md)를 참고한다. 업로드 마감 검사에 별도의 전송 유예 초는 없다.
 
 ## 4. 첫 사진 가림·두 번째 촬영 시작
 
@@ -152,4 +152,6 @@ Postman의 multipart Content-Type과 boundary는 자동 설정을 사용한다.
 
 ## 미구현·검증 범위
 
-미션 생성·저장 및 `/hand-analyze` 조건 비교는 구현했다. 두 장 최종 판정, 두 번째 사진 가림·최종 전송, 구매자 결과·다운로드, 제목 수정과 7일 전체 정리는 남은 작업이다.
+미션 생성·저장, 최종 판정·2차 가림·판매자 공유·구매자 사진 조회 및 원본 삭제 재시도를 연결했다. 실제 프론트엔드·모바일 사진 연동, 제목 수정과 7일 전체 삭제는 남은 작업이다.
+
+최종 판정과 공유의 요청·응답, 상태 전이, 오류 및 DB 준비는 [최종 판정·공유 API](trueshot-finalization-api.md)에 정리했다.

@@ -40,4 +40,11 @@ public class TrueshotController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .body(service.detail(Long.valueOf(authentication.getName()), id));
     }
+
+    @GetMapping(value="/{id}/photos/{number}",produces=org.springframework.http.MediaType.IMAGE_JPEG_VALUE)
+    public ResponseEntity<byte[]> photo(Authentication authentication,@PathVariable Long id,@PathVariable short number) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header("Content-Disposition","inline; filename=\"trueshot-"+number+".jpg\"")
+                .body(service.sharedPhoto(Long.valueOf(authentication.getName()),id,number));
+    }
 }

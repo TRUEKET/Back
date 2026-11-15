@@ -52,6 +52,12 @@ public class TrueshotPhoto {
     @Column(name = "mask_boxes", columnDefinition = "jsonb", nullable = false)
     private JsonNode maskBoxes;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "hand_analysis", columnDefinition = "jsonb")
+    private JsonNode handAnalysis;
+
+    public void storeHandAnalysis(JsonNode analysis) { handAnalysis = analysis; }
+
     // 비공개 임시 원본 경로. 최종 판정 또는 실패 후 원본을 삭제한다.
     @Column(name = "original_storage_key")
     private String originalStorageKey;
