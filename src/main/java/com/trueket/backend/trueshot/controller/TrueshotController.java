@@ -27,7 +27,7 @@ import java.util.List;
 @ApiResponse(responseCode = "401", description = "로그인이 필요하거나 비활성 사용자", content = @Content)
 @ApiResponse(responseCode = "403", description = "접근 권한이 없거나 CSRF 토큰 누락·불일치", content = @Content)
 @RestController
-@RequestMapping("/trueshot")
+@RequestMapping(value = "/trueshot", produces = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
 public class TrueshotController {
     private final TrueshotRequestService service;
 
@@ -36,7 +36,7 @@ public class TrueshotController {
     }
 
     @Operation(summary = "트루샷 요청 생성", description = "제목은 최대 20자입니다. null 또는 공백이면 기본 제목을 사용합니다. 판매자에게 sellerPath를 전달하세요.")
-    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true, schema = @Schema(type = "string"),
             description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
     @ApiResponse(responseCode = "201", description = "인증 요청 생성 완료")
     @ApiResponse(responseCode = "400", description = "제목 길이 초과 또는 잘못된 요청", content = @Content)

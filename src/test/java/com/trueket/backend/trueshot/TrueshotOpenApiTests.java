@@ -80,4 +80,57 @@ class TrueshotOpenApiTests {
         assertFalse(spec.path("components").path("schemas").path("CreateRequest").path("properties")
                 .path("title").path("description").asText().isBlank());
     }
+
+    @Test
+    void everyTrueshotOperationHasUsableParametersAndCorrectResponseSchema() throws Exception {
+        var response = mvc.perform(get("/v3/api-docs/trueshot"))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        JsonNode spec = json.readTree(response.getContentAsString());
+        int operations = 0;
+        var paths = spec.path("paths").fields();
+        while (paths.hasNext()) {
+            var path = paths.next();
+            for (String method : java.util.List.of("get", "post")) {
+                JsonNode operation = path.getValue().path(method);
+                if (operation.isMissingNode()) continue;
+                operations++;
+                assertFalse(operation.path("summary").asText().isBlank(), path.getKey());
+                JsonNode csrf = null;
+                for (JsonNode parameter : operation.path("parameters")) {
+                    assertFalse(parameter.path("schema").isMissingNode(), path.getKey() + ": " + parameter.path("name"));
+                    if (parameter.path("name").asText().equals("X-CSRF-TOKEN")) csrf = parameter;
+                    assertNotEquals("authentication", parameter.path("name").asText());
+                    assertNotEquals("request", parameter.path("name").asText());
+                }
+                if (method.equals("post")) {
+                    assertNotNull(csrf, path.getKey());
+                    assertEquals("string", csrf.path("schema").path("type").asText(), path.getKey());
+                    assertTrue(csrf.path("required").asBoolean(), path.getKey());
+                }
+                String success = path.getKey().equals("/trueshot") && method.equals("post") ? "201" : "200";
+                JsonNode content = operation.path("responses").path(success).path("content");
+                assertFalse(content.isMissingNode(), path.getKey());
+                if (!path.getKey().contains("/photos/") && !path.getKey().contains("/preview/")) {
+                    JsonNode schema = resolve(spec, content.path("application/json").path("schema"));
+                    if (path.getKey().equals("/trueshot") && method.equals("get")) {
+                        schema = resolve(spec, schema.path("items"));
+                    }
+                    assertTrue(schema.path("properties").size() > 0, path.getKey() + " " + method + " " + content);
+                }
+            }
+        }
+        assertEquals(12, operations);
+        JsonNode multipart = spec.path("paths").path("/s/{token}/photo").path("post")
+                .path("requestBody").path("content").path("multipart/form-data");
+        JsonNode properties = resolve(spec, multipart.path("schema")).path("properties");
+        assertEquals("string", properties.path("photo").path("type").asText());
+        assertEquals("binary", properties.path("photo").path("format").asText());
+        assertTrue(resolve(spec, properties.path("analysis")).path("properties").has("hands"));
+        assertFalse(spec.path("paths").path("/s/{token}/result").path("get").path("responses").has("409"));
+        assertFalse(spec.path("paths").path("/s/{token}/result").path("get").path("responses").has("503"));
+    }
+
+    private JsonNode resolve(JsonNode spec, JsonNode schema) {
+        return schema.has("$ref") ? spec.at(schema.path("$ref").asText().substring(1)) : schema;
+    }
 }

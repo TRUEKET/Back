@@ -35,7 +35,7 @@ import com.trueket.backend.trueshot.service.TrueshotJudgmentService;
 @ApiResponse(responseCode = "403", description = "인증을 시작한 세션이 아니거나 CSRF 토큰 누락·불일치", content = @Content)
 @ApiResponse(responseCode = "404", description = "링크 또는 사진을 찾을 수 없음", content = @Content)
 @RestController
-@RequestMapping("/s/{token}")
+@RequestMapping(value = "/s/{token}", produces = MediaType.APPLICATION_JSON_VALUE)
 public class TrueshotSellerController {
     private final TrueshotRequestService service;
     private final TrueshotPhotoService photos;
@@ -60,7 +60,7 @@ public class TrueshotSellerController {
     }
 
     @Operation(summary = "판매자 인증 시작", description = "sellerConsented=true로 사진 전달에 동의합니다. 최초 한 번만 시작할 수 있으며 첫 사진 촬영 기한과 인증 코드를 반환합니다.")
-    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true, schema = @Schema(type = "string"),
             description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "400", description = "요청 값 또는 사진·손 인식 데이터 오류", content = @Content)
@@ -74,12 +74,12 @@ public class TrueshotSellerController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
     }
 
-    @Operation(summary = "인증 사진 업로드", description = "n=1은 첫 사진, n=2는 두 번째 사진입니다. photo는 5MB 이하 JPEG/PNG 파일입니다. 두 번째 사진에는 application/json 형식의 analysis 파트가 필수입니다. imageWidth/imageHeight는 실제 업로드 이미지 크기와 같아야 하며 EXIF를 제거한 사진을 사용하세요. 200이어도 accepted=false이면 retryReasons를 확인하고 재촬영하세요. 두 번째 사진 접수 후 JUDGING이면 /result로 확인하세요.")
+    @Operation(summary = "인증 사진 업로드", description = "n=1은 첫 사진, n=2는 두 번째 사진입니다. photo는 5MB 이하 JPEG/PNG 파일입니다. 두 번째 사진에는 application/json 형식의 analysis 파트가 필수입니다. imageWidth/imageHeight는 실제 업로드 이미지 크기와 같아야 하며, 두 번째 사진은 EXIF를 제거한 사진을 사용하세요. 200이어도 accepted=false이면 retryReasons를 확인하고 재촬영하세요. 두 번째 사진 접수 후 JUDGING이면 /result로 확인하세요.")
     @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
             mediaType = MediaType.MULTIPART_FORM_DATA_VALUE,
             encoding = @Encoding(name = "analysis", contentType = MediaType.APPLICATION_JSON_VALUE)))
     @SecurityRequirement(name = "sessionAuth")
-    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true, schema = @Schema(type = "string"),
             description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "400", description = "요청 값 또는 사진·손 인식 데이터 오류", content = @Content)
@@ -87,6 +87,7 @@ public class TrueshotSellerController {
     @ApiResponse(responseCode = "410", description = "인증 또는 촬영·공유 기한 만료", content = @Content)
     @ApiResponse(responseCode = "413", description = "사진 용량 제한 초과", content = @Content)
     @ApiResponse(responseCode = "503", description = "외부 분석 또는 저장 서비스 일시 장애", content = @Content)
+    @ApiResponse(responseCode = "415", description = "multipart/form-data 또는 analysis 파트의 application/json 형식 오류", content = @Content)
     @PostMapping(value = "/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<TrueshotPhotoResponse> photo(@Parameter(description = "구매자가 전달한 sellerPath의 토큰") @PathVariable String token,
             @Parameter(description = "업로드할 사진 번호", schema = @Schema(allowableValues = {"1", "2"})) @RequestParam("n") short number, @Parameter(description = "5MB 이하 JPEG 또는 PNG 사진", schema = @Schema(type = "string", format = "binary")) @RequestPart("photo") MultipartFile photo,
@@ -109,9 +110,9 @@ public class TrueshotSellerController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
     }
 
-    @Operation(summary = "사진 개인정보 자동 마스킹", description = "현재 단계의 사진에 자동 마스킹을 적용합니다. HTTP 200이어도 maskStatus가 FAILED이면 미리보기가 제공되지 않을 수 있습니다.")
+    @Operation(summary = "첫 사진 개인정보 자동 마스킹", description = "FIRST_MASKING 단계에서 첫 번째 사진에 자동 마스킹을 적용합니다. 두 번째 사진은 최종 판정 중 서버가 자동으로 마스킹하므로 이 API를 호출하지 않습니다. HTTP 200이어도 maskStatus가 FAILED이면 미리보기가 제공되지 않습니다.")
     @SecurityRequirement(name = "sessionAuth")
-    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true, schema = @Schema(type = "string"),
             description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "409", description = "이미 사용한 링크 또는 현재 단계에서 호출 불가", content = @Content)
@@ -135,11 +136,9 @@ public class TrueshotSellerController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(masks.preview(token,number));
     }
 
-    @Operation(summary = "인증 진행 상태 및 결과 조회", description = "새로고침 시 코드·기한·미션·마스킹 상태를 복구합니다. JUDGING 단계에서는 pollAfterMillis 간격으로 다시 조회하세요.")
+    @Operation(summary = "인증 진행 상태 및 결과 조회", description = "새로고침 시 코드·기한·미션·마스킹 상태를 복구합니다. 조회 자체는 분석을 실행하지 않습니다. JUDGING 단계에서는 pollAfterMillis 간격으로 다시 조회하세요. 서버가 저장된 사진으로 자동 재시도합니다.")
     @SecurityRequirement(name = "sessionAuth")
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
-    @ApiResponse(responseCode = "409", description = "이미 사용한 링크 또는 현재 단계에서 호출 불가", content = @Content)
-    @ApiResponse(responseCode = "503", description = "외부 분석 또는 저장 서비스 일시 장애", content = @Content)
     @GetMapping("/result")
     public ResponseEntity<SellerResult> result(@Parameter(description = "구매자가 전달한 sellerPath의 토큰") @PathVariable String token,@Parameter(hidden = true) HttpServletRequest request) {
         requireSeller(request,token);
@@ -148,7 +147,7 @@ public class TrueshotSellerController {
 
     @Operation(summary = "최종 결과 및 사진 공유 확정", description = "sharePhotos=true이면 마스킹 사진을 구매자에게 공유합니다. boxes는 두 번째 사진의 추가 가림 영역입니다. false이면 boxes는 빈 배열로 보내며 사진 없이 결과만 확정합니다.")
     @SecurityRequirement(name = "sessionAuth")
-    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true, schema = @Schema(type = "string"),
             description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "400", description = "요청 값 또는 사진·손 인식 데이터 오류", content = @Content)
@@ -166,7 +165,7 @@ public class TrueshotSellerController {
 
     @Operation(summary = "첫 사진 마스킹 확인 및 두 번째 미션 발급", description = "첫 사진의 추가 가림 영역을 boxes로 전달합니다. 추가 영역이 없으면 빈 배열을 사용합니다. 확인 후 두 번째 촬영 미션과 기한을 반환합니다.")
     @SecurityRequirement(name = "sessionAuth")
-    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true,
+    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true, schema = @Schema(type = "string"),
             description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "400", description = "요청 값 또는 사진·손 인식 데이터 오류", content = @Content)

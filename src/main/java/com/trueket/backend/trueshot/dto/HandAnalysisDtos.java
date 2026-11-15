@@ -16,8 +16,8 @@ public final class HandAnalysisDtos {
     ) {}
 
     public record Hand(
-            @Schema(description = "원본 이미지 기준 손 중심 x 좌표(px), 0~imageWidth", example = "640") @NotNull Double x,
-            @Schema(description = "원본 이미지 기준 손 중심 y 좌표(px), 0~imageHeight", example = "360") @NotNull Double y,
+            @Schema(description = "업로드 이미지 기준 검지 끝 landmark 8의 x 좌표(px), 0~imageWidth", example = "640") @NotNull Double x,
+            @Schema(description = "업로드 이미지 기준 검지 끝 landmark 8의 y 좌표(px), 0~imageHeight", example = "360") @NotNull Double y,
             @Schema(description = "손 동작: None, Closed_Fist, Open_Palm, Pointing_Up, Thumb_Down, Thumb_Up, Victory, ILoveYou", example = "Victory") @NotBlank @Size(max = 64) String gesture,
             @Schema(description = "손 동작 인식 신뢰도(0~1)", example = "0.95") @NotNull Double confidence
     ) {}
