@@ -45,7 +45,7 @@ public class ReportEvidenceService {
     }
 
     public ReportEvidenceResponse verifySelected(Long authenticatedUserId, UUID analysisId,
-            Integer accountIndex, String account, MultipartFile file, HttpSession session) {
+                                                 Integer accountIndex, String account, MultipartFile file, HttpSession session) {
         // 1. 기존 JD 판독 세션 조회
         AnalysisReportSource source =
                 analysisReportSourceService.load(analysisId, session);
