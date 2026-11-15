@@ -61,13 +61,22 @@ class AnalysisReportLookupTests {
         report(account,"a",ReportKind.FRAUD);
         report(phone,"b",ReportKind.SUSPICION);
         report(sns,"c",ReportKind.SUSPICION);
-        var result=lookup.lookup(extracted(List.of("KB 123-456-789012","국민 123456789012"),
+        var result=lookup.lookup(extracted(List.of("KB 123-456-789012","국민 123456789012","국민은행 123456789012"),
                 List.of("010 1234 5678"),List.of("TRUEKET_USER","@trueket_user")));
         assertTrue(result.available());
         assertEquals(3,result.targets().size());
         assertEquals(1,result.targets().stream().filter(t->t.damagePeople()==1).count());
         assertEquals(Set.of(account.getId().toString(),phone.getId().toString(),sns.getId().toString()),
                 new HashSet<>(result.targets().stream().map(ReportLookup.Target::identifierId).toList()));
+    }
+    @Test void fullBankNameFromModelMatchesStoredShortBankAlias() {
+        var account=identifier("카카오 3333121234567");
+        report(account,"synthetic-reporter",ReportKind.FRAUD);
+        var result=lookup.lookup(extracted(List.of("카카오뱅크 3333-12-1234567"),List.of(),List.of()));
+        assertTrue(result.available());
+        assertEquals(1,result.targets().size());
+        assertEquals(Stage.DANGER,result.targets().get(0).stage());
+        assertEquals(account.getId().toString(),result.targets().get(0).identifierId());
     }
     @Test void noMatchIsSuccessfulZeroButDifferentBankAndSuffixNeverMatch() {
         identifier("국민 123456789012");
