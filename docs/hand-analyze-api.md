@@ -92,7 +92,7 @@ async function submitSecondPhoto(token: string, capturedPhoto: Blob, recognizer:
 
 accepted는 접수 성공이며 최종 인증 성공 여부와 구분한다. phase는 정상 판정·가림 완료 시 SHARE_WAITING, 불일치 시 FAILED, 가림이 불확실해 결과만 제공하면 COMPLETED, 외부 서비스 일시 장애 시 JUDGING일 수 있다.
 
-`GET /s/{token}/result`로 판매자 결과를 조회한다. JUDGING이면 사진을 다시 업로드하지 않고 결과를 조회한다. 서버가 자동 재시도하며 필요한 경우 기존 `POST /s/{token}/judge`로 같은 원본을 재처리할 수 있다. 구매자는 로그인한 소유자 권한으로 `GET /trueshot/{id}`에서 최종 결과와 체크 내용을 확인한다. 내부 분석의 화면·손 좌표와 OCR 원문을 별도 응답으로 직접 반환하지 않는다.
+`GET /s/{token}/result`로 판매자 결과를 조회한다. 제출 응답에는 해당 사진의 checks·failReasons, 결과 조회에는 두 사진의 checks·failReasons가 포함된다. JUDGING이면 사진을 다시 업로드하지 않고 결과를 조회한다. 서버가 자동 재시도하며 필요한 경우 기존 `POST /s/{token}/judge`로 같은 원본을 재처리할 수 있다. 구매자는 로그인한 소유자 권한으로 `GET /trueshot/{id}`에서 최종 결과와 체크 내용을 확인한다. 내부 분석의 화면·손 좌표와 OCR 원문을 별도 응답으로 직접 반환하지 않는다.
 
 ## 미션 비교
 
@@ -100,7 +100,7 @@ accepted는 접수 성공이며 최종 인증 성공 여부와 구분한다. pha
 - POINT_SCREEN: 검지 끝과 화면 사각형의 최소 유클리드 거리가 화면 짧은 변의 10% 이내. 내부는 거리 0이다. Pointing_Up 분류를 강제하거나 손가락 방향 벡터를 검사하지 않는다.
 - GESTURE_POSITION: 같은 손에서 브이 조건과 LEFT/RIGHT/ABOVE/BELOW 조건을 모두 만족해야 한다. 화면 경계는 지정 방향으로 인정하지 않는다.
 
-손 없음·화면 없음·화면 불확실은 통과시키지 않는다. 미션은 경로 token에 해당하는 서버 저장값을 사용한다. 손 모양은 프론트가 인식한 값을 사용하며 서버에서 다시 인식하지 않는다.
+손 없음·화면 없음·화면 불확실은 통과시키지 않는다. 같은 화면 탐지 호출에서 2차 사진의 화질도 확인하며, 미션이 일치해도 흐린 사진은 실패 처리한다. 미션은 경로 token에 해당하는 서버 저장값을 사용한다. 손 모양은 프론트가 인식한 값을 사용하며 서버에서 다시 인식하지 않는다.
 
 오류는 400 잘못된 사진·analysis·좌표·EXIF, 403 판매자 세션·CSRF, 409 중복 제출·단계 불일치, 410 제한 시간 초과, 413 용량 초과, 415 part Content-Type 오류다. 접수 후 외부 서비스 장애는 JUDGING에서 재시도한다.
 

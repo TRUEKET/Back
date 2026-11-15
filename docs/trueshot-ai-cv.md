@@ -53,7 +53,7 @@ OpenAI를 사용한다. `OPENAI_API_KEY`와 모델 설정을 대화 판독과 �
 {"codeVisible":true,"codeMatches":true,"clear":true}
 ```
 
-이 세 항목은 별도 DB 필드에 저장하지 않는다. 실패 사유는 재촬영 응답 `retryReasons`에만 넣고 요청의 최종 실패 사유로 누적하지 않는다.
+이 세 항목은 별도 DB 필드에 저장하지 않는다. 재촬영 응답에 retryReasons·checks·failReasons를 반환하며 요청의 최종 실패 사유로 누적하지 않는다.
 
 개인정보 탐지 응답:
 
@@ -84,7 +84,7 @@ OpenAI를 사용한다. `OPENAI_API_KEY`와 모델 설정을 대화 판독과 �
 
 구현된 사유는 `30분 안에 시작하지 않음`, `30분 안에 인증이 완료되지 않음`, `첫 번째 사진이 시간 내에 전송되지 않음`, `두 번째 사진이 시간 내에 전송되지 않음`이다.
 
-항목별 결과는 judgment_result JSONB, 실패 사유는 기존 fail_reasons 문자열 배열에 저장한다. 사진별 MediaPipe 입력은 hand_analysis JSONB에 보관한다. 구매자에게는 완료된 체크 결과, 판매자에게는 요약 결과만 제공한다. 클라이언트가 보낸 통과 여부는 사용하지 않는다.
+항목별 결과는 judgment_result JSONB, 실패 사유는 기존 fail_reasons 문자열 배열에 저장한다. 사진별 MediaPipe 입력은 hand_analysis JSONB에 보관한다. 구매자에게는 완료된 판단 결과, 판매자에게는 화면 표시용 checks·failReasons를 제공한다. 판매자에게 원문 OCR·내부 판단 JSON·Storage 키는 공개하지 않는다. 클라이언트가 보낸 통과 여부는 사용하지 않는다.
 
 ## 4. Storage·삭제 계약
 
