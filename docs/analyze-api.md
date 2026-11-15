@@ -223,3 +223,31 @@ RP-05의 evidenceToken을 받은 뒤 POST /reports에 analysisId, kind=FRAUD, ev
 신한 111-111-1-111111 합성 캡처의 실제 AI 호출에서 문장에는 숫자를 읽고도 accounts가 비는 사례를 관찰했다. 반복/테스트 번호를 존재 여부 추측으로 누락하지 않도록 추출 지침을 추가한 뒤 같은 사례의 전체 번호 추출과 ***1111 마스킹을 확인했다. 별도 합성 송금 화면에서도 계좌는 일치했으나 실제 이체 아님 표기가 있는 화면은 transferCompleted=false였다. 이를 실제 송금 사진 검증 성공으로 간주하지 않는다.
 
 AnalysisFraudEvidenceFlowTests는 실제 HTTP 분석→증빙→FRAUD 생성, 가려진 표시값 거부, 잘못된 순번·계좌 거부, 재등록 거부를 검증한다. H2를 사용하고 AI·Storage·가림 개인정보 판정은 대체하며 이미지 검증·자르기와 계좌 비교·토큰·DB 저장은 실제 코드다. SMTP는 비활성화했다.
+
+## 실제 AI·Storage·DB 전체 흐름 검증 (#57, 2026-11-15)
+
+대체 모델이 아닌 설정된 OpenAI, 팀 Supabase DB 및 Private report-evidence 버킷으로 실제 HTTP 호출을 수행했다. 임시 서버는 127.0.0.1:18089에만 바인딩하고 스케줄러와 SMTP를 비활성화했다. 기존 계정/사진은 사용하지 않고 새 demo 계정과 합성 대화·송금 완료 PNG만 생성했다. 실제 금융 이체는 하지 않았다. 임시 진단 경로로 본인 판독 원문을 확인했으며 해당 경로는 저장소 코드나 일반 서버에 추가하지 않았다.
+
+첫 실행:
+
+- 가입·세션·CSRF: 정상.
+- POST /analyze: 200, 약 9.8초. 표시값 ***1111, 서버 원문 신한 1111111111111, DANGER. 신고 가능 조건 true/true.
+- account=***1111 요청: 400. 의도된 거부이며 AI 계좌 원문이 사라진 것이 아니다.
+- accountIndex=0으로 POST /reports/evidence: 200, 약 5.4초. 실제 AI의 송금 완료 확인·전체 계좌 비교·영역 자르기·개인정보 검사·Storage 업로드·증빙 토큰 저장까지 통과했다.
+- POST /reports(FRAUD): 503. 계좌 비교는 통과했지만 Storage 최종 복사 단계가 실패했다.
+
+발견한 오류: SupabaseReportEvidenceStore가 object/copy의 bucketId 대신 sourceBucket을 보내고, 삭제도 공식 버킷+prefixes 배열 경로 대신 파일별 DELETE 경로를 사용했다. 공식 Storage SDK 계약에 맞춰 수정했다. 기존 단위 테스트는 상태 코드만 대체하고 요청 형식을 검증하지 않아 이를 놓쳤다. ReportEvidenceStorageContractTests가 필드명·경로·DELETE 본문을 검사하도록 추가했다.
+
+수정 후 같은 테스트 계정으로 전체 재실행:
+
+| 단계 | 실제 결과 |
+| --- | --- |
+| 판독 | 200, 약 8.0초, 원문/표시값 구분 정상 |
+| 송금 사진 검증·임시 Storage | 200, 약 7.6초, 실제 증빙 토큰 발급 |
+| FRAUD 신고 저장·증빙 복사 | 201, 약 1.7초 |
+| DB 확인 | 신고 1건, 증빙 1건, 소비된 토큰 1건. 암호화된 식별자 복원 결과가 SHINHAN:1111111111111과 일치 |
+| Storage 확인 | 최종 증빙 실제 읽기 200, 성공한 임시 파일은 삭제됨 |
+
+참고: 공식 요청 계약 https://github.com/supabase/storage-js/blob/main/src/packages/StorageFileApi.ts (copy/remove).
+
+테스트 전용 계정의 정확한 ID·이메일로 범위를 확인하고 해당 계정의 파일·임시 증빙 메타데이터만 제거한 뒤 DELETE /me=204로 계정과 신고를 정리했다. 파일 부재 및 users/reports/pending_report_evidence의 해당 사용자 행 0건을 확인하고 임시 서버를 종료했다. 공유 identifiers는 일반 탈퇴 정책대로 보존했다. 메일 발송·기존 데이터 변경·배포·트루샷 AI/CV 변경은 없다. 합성 사례 한 종류의 성공이며 모든 실사용 사진의 인식 정확도를 보장하지 않는다.

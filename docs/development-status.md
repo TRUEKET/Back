@@ -49,3 +49,5 @@ RP 신고 리스트·조회·등록·이의제기는 신고 담당자, TS 요청
 #55: 신고 전체 코드 병합 후 RP-05의 원문 account 입력과 판독 화면의 마스킹 값 간 연결 불일치를 확인했다. 계좌 순번(accountIndex)으로 소유권 확인된 서버 원문을 선택하는 방식을 추가했다. H2에서 분석→증빙 토큰→FRAUD 등록을 실제 HTTP로 검증했으며 외부 AI/Storage·메일은 대체했다. 실호출 AI의 반복 숫자 계좌 누락도 관찰해 프롬프트를 보완했다. 실제 송금 사진/Storage 전체 성공은 별도 실환경 검증이 필요하다.
 
 이번 최신 병합 코드 전체 테스트는 356개 중 27개가 기존 외부 환경 의존으로 실패했다: BackendApplicationTests(1), LookupServiceIntegrationTest(20), ReportServiceIntegrationTest(5)는 test 프로필의 TEST_DB_* PostgreSQL 설정이 없고, IdentifierHashDebugTest(1)는 실제 identifier 308번을 요구한다. 이 네 클래스를 명시적으로 제외한 실행 가능한 회귀 테스트는 통과했다. 테스트 설정이나 팀 DB를 임의로 변경하지 않았으며 전체 테스트 통과로 보고하지 않는다.
+
+#57: 실제 AI·Storage·팀 DB를 사용하는 판독→송금 검증→FRAUD 등록을 직접 수행했다. 계좌 검증은 성공했고 신고 Storage 복사 요청 필드(bucketId) 및 삭제 엔드포인트 오류를 발견·수정했다. 수정 후 200→200→201 확인, DB 계좌·증빙과 실제 파일 확인, 테스트 계정/신고/파일/임시 증빙 정리 완료. 공유 식별자는 보존했다. SMTP와 스케줄러는 껐으며 임시 검증 서버를 종료했다.
