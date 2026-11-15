@@ -1,6 +1,7 @@
 
 package com.trueket.backend.report.service;
 
+import com.trueket.backend.dispute.dto.DisputeNoticeResponse;
 import com.trueket.backend.dispute.repository.DisputeItemRepository;
 import com.trueket.backend.global.exception.BusinessException;
 import com.trueket.backend.global.exception.ErrorCode;
@@ -15,6 +16,7 @@ import com.trueket.backend.report.repository.ReportRepository;
 
 import java.util.List;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -30,15 +32,46 @@ public class ReportService {
     private final ReportIdentifierRepository reportIdentifierRepository;
     private final EvidenceRepository evidenceRepository;
     private final DisputeItemRepository disputeItemRepository;
+    private final EntityManager entityManager;
 
     // RP-06: 내 신고 목록 조회
     public Page<ReportListResponse> getMyReports(
             Long userId,
             Pageable pageable
     ) {
-        return reportRepository
-                .findAllByUser_IdOrderByCreatedAtDesc(userId, pageable)
-                .map(ReportListResponse::from);
+        Page<Report> reports = reportRepository
+                .findAllByUser_IdOrderByCreatedAtDesc(
+                        userId, pageable
+                );
+
+        List<Long> reportIds = reports.getContent()
+                .stream()
+                .map(Report::getId)
+                .toList();
+
+        if (reportIds.isEmpty()) {
+            return reports.map(ReportListResponse::from);
+        }
+
+        var disputesByReport = disputeItemRepository
+                .findAllForReportIds(reportIds)
+                .stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        item -> item.getReport().getId()
+                ));
+
+        return reports.map(report -> {
+            var items = disputesByReport.getOrDefault(
+                    report.getId(),
+                    List.of()
+            );
+
+            var notices = items.stream()
+                    .map(DisputeNoticeResponse::from)
+                    .toList();
+
+            return ReportListResponse.from(report, notices);
+        });
     }
 
     // RP-06: 내 신고 상세 조회
@@ -71,9 +104,16 @@ public class ReportService {
                         )
                         .toList();
 
+        List<DisputeNoticeResponse> disputes =
+                disputeItemRepository.findAllByReport_Id(reportId)
+                        .stream()
+                        .map(DisputeNoticeResponse::from)
+                        .toList();
+
         return ReportDetailResponse.from(
                 report,
-                identifiers
+                identifiers,
+                disputes
         );
     }
 
@@ -92,6 +132,20 @@ public class ReportService {
                         )
                 );
 
+        // 신고에 연결된 이의제기의 삭제 이력 보존
+        var disputeItems = disputeItemRepository.findAllByReport_Id(reportId);
+
+        for (var item : disputeItems) {
+            entityManager.createNativeQuery("""
+            INSERT INTO public.dispute_deleted_records
+                (dispute_id, report_id, decided_at)
+            VALUES (?1, ?2, NOW())
+            ON CONFLICT (dispute_id, report_id) DO NOTHING
+            """)
+                    .setParameter(1, item.getDispute().getId())
+                    .setParameter(2, reportId)
+                    .executeUpdate();
+        }
         // 이의제기 연결 데이터 삭제
         disputeItemRepository.deleteAllByReport_Id(reportId);
 

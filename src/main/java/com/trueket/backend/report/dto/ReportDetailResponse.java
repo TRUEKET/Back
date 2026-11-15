@@ -1,6 +1,7 @@
 package com.trueket.backend.report.dto;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.trueket.backend.dispute.dto.DisputeNoticeResponse;
 import com.trueket.backend.report.entity.Report;
 import com.trueket.backend.report.entity.enums.ReportKind;
 import com.trueket.backend.report.entity.enums.ReportStatus;
@@ -20,12 +21,14 @@ public record ReportDetailResponse(
         Object referenceLinks,
         LocalDate sentDate,
         OffsetDateTime createdAt,
-        List<ReportIdentifierResponse> identifiers
+        List<ReportIdentifierResponse> identifiers,
+        List<DisputeNoticeResponse> disputes
 ) {
 
     public static ReportDetailResponse from(
             Report report,
-            List<ReportIdentifierResponse> identifiers
+            List<ReportIdentifierResponse> identifiers,
+            List<DisputeNoticeResponse> disputes
     ) {
         return new ReportDetailResponse(
                 report.getId(),
@@ -36,7 +39,8 @@ public record ReportDetailResponse(
                 convertJsonNode(report.getReferenceLinks()),
                 report.getSentDate(),
                 report.getCreatedAt(),
-                List.copyOf(identifiers)
+                List.copyOf(identifiers),
+                List.copyOf(disputes)
         );
     }
 
@@ -100,5 +104,11 @@ public record ReportDetailResponse(
         }
 
         return node.asText();
+    }
+    public static ReportDetailResponse from(
+            Report report,
+            List<ReportIdentifierResponse> identifiers
+    ) {
+        return from(report, identifiers, List.of());
     }
 }

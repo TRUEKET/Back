@@ -58,10 +58,15 @@ public class ReportEvidenceService {
         String targetAccount = normalizeAccount(account);
 
         // 4. JD가 추출한 계좌인지 확인
-        boolean accountExists = source.identifiers().accounts()
-                .stream()
+        var jdAccounts = source.identifiers().accounts();
+
+        log.info("RP-05 JD 계좌 개수: {}", jdAccounts.size());
+
+        boolean accountExists = jdAccounts.stream()
                 .map(this::normalizeAccount)
                 .anyMatch(targetAccount::equals);
+
+        log.info("RP-05 JD 계좌 일치 여부: {}", accountExists);
 
         if (!accountExists) {
             log.warn("RP-05 실패: JD 판독 결과에 신고 계좌 없음");

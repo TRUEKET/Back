@@ -2,7 +2,11 @@ package com.trueket.backend.identifier.repository;
 
 import com.trueket.backend.identifier.entity.Identifier;
 import com.trueket.backend.identifier.entity.enums.IdentifierType;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
@@ -19,5 +23,11 @@ public interface IdentifierRepository
     boolean existsByTypeAndValueHash(
             IdentifierType type,
             String valueHash
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM Identifier i WHERE i.id = :id")
+    Optional<Identifier> findByIdForUpdate(
+            @Param("id") Long id
     );
 }

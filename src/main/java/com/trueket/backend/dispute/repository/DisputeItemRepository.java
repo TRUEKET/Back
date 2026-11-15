@@ -2,7 +2,9 @@ package com.trueket.backend.dispute.repository;
 
 import com.trueket.backend.dispute.entity.DisputeItem;
 import com.trueket.backend.dispute.entity.enums.DisputeItemStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -62,4 +64,38 @@ public interface DisputeItemRepository
             OffsetDateTime now
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT di
+    FROM DisputeItem di
+    JOIN FETCH di.report r
+    JOIN FETCH r.user
+    WHERE di.dispute.id = :disputeId
+      AND di.report.id = :reportId
+    """)
+    Optional<DisputeItem> findForDecision(
+            @Param("disputeId") Long disputeId,
+            @Param("reportId") Long reportId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    SELECT di
+    FROM DisputeItem di
+    JOIN FETCH di.report
+    WHERE di.id = :id
+    """)
+    Optional<DisputeItem> findByIdForUpdate(
+            @Param("id") Long id
+    );
+
+    @Query("""
+    SELECT di
+    FROM DisputeItem di
+    JOIN FETCH di.dispute
+    WHERE di.report.id IN :reportIds
+    """)
+    List<DisputeItem> findAllForReportIds(
+            @Param("reportIds") List<Long> reportIds
+    );
 }
