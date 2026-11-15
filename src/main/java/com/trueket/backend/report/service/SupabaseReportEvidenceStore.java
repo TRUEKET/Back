@@ -148,49 +148,9 @@ public class SupabaseReportEvidenceStore {
 
 
     public void deletePending(String key) {
-        if (key == null || !key.matches(
-                "pending/[1-9][0-9]*/"
-                        + "[0-9a-fA-F-]{36}\\.png"
-        )) {
-            throw new IllegalArgumentException(
-                    "올바르지 않은 임시 증빙 경로입니다."
-            );
-        }
-
-        // 기존 설정 검증
-        validateConfiguration(key, new byte[]{1});
-
-        try {
-            HttpRequest request = HttpRequest.newBuilder(
-                            URI.create(
-                                    url + "/storage/v1/object/"
-                                            + bucket + "/" + key
-                            )
-                    )
-                    .timeout(Duration.ofSeconds(10))
-                    .header("apikey", serviceKey)
-                    .header("Authorization", "Bearer " + serviceKey)
-                    .DELETE()
-                    .build();
-
-            HttpResponse<Void> response = http.send(
-                    request,
-                    HttpResponse.BodyHandlers.discarding()
-            );
-
-            if (response.statusCode() != 200
-                    && response.statusCode() != 204) {
-                throw unavailable();
-            }
-
-        } catch (IOException | IllegalArgumentException e) {
-            throw unavailable();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw unavailable();
-        }
+        validateStorageKey(key, "pending");
+        deleteObject(key);
     }
-
 
     public String createReportKey(Long userId) {
         if (userId == null || userId <= 0) {
@@ -227,7 +187,7 @@ public class SupabaseReportEvidenceStore {
 
         String body = """
         {
-          "sourceBucket": "%s",
+          "bucketId": "%s",
           "sourceKey": "%s",
           "destinationBucket": "%s",
           "destinationKey": "%s"
@@ -274,31 +234,22 @@ public class SupabaseReportEvidenceStore {
 
     public void deleteReport(String key) {
         validateStorageKey(key, "reports");
-        validateConfiguration(key, new byte[]{1});
+        deleteObject(key);
+    }
 
+    private void deleteObject(String key) {
+        validateConfiguration(key, new byte[]{1});
         try {
-            HttpRequest request = HttpRequest.newBuilder(
-                            URI.create(
-                                    url + "/storage/v1/object/"
-                                            + bucket + "/" + key
-                            )
-                    )
+            // Supabase removal takes an exact-key prefixes array at the bucket endpoint.
+            var request = HttpRequest.newBuilder(URI.create(url + "/storage/v1/object/" + bucket))
                     .timeout(Duration.ofSeconds(10))
                     .header("apikey", serviceKey)
                     .header("Authorization", "Bearer " + serviceKey)
-                    .DELETE()
+                    .header("Content-Type", "application/json")
+                    .method("DELETE", HttpRequest.BodyPublishers.ofString("{\"prefixes\":[\"" + key + "\"]}"))
                     .build();
-
-            HttpResponse<Void> response = http.send(
-                    request,
-                    HttpResponse.BodyHandlers.discarding()
-            );
-
-            if (response.statusCode() != 200
-                    && response.statusCode() != 204) {
-                throw unavailable();
-            }
-
+            var response = http.send(request, HttpResponse.BodyHandlers.discarding());
+            if (response.statusCode() != 200 && response.statusCode() != 204) throw unavailable();
         } catch (IOException | IllegalArgumentException e) {
             throw unavailable();
         } catch (InterruptedException e) {
