@@ -96,7 +96,7 @@ OpenAI를 사용한다. `OPENAI_API_KEY`와 모델 설정을 대화 판독과 �
 | `trueshot_photos.masked_image` | 가린 사진의 키. 대기·실패면 null |
 | `trueshot_photos.mask_boxes` | `{"automatic":[…],"seller":[…]}`. 가림 전 기본값은 `[]` |
 | `trueshot_photos.original_deleted_at` | 원본 Storage 삭제 성공 시각 |
-| `trueshot_requests.purge_at` | 생성 + 7일. 전체 삭제 작업은 아직 미구현 |
+| `trueshot_requests.purge_at` | 생성 + 7일. 만료 시 원본·가림 파일 삭제 후 사진·요청 DB 행 자동 정리 (#51) |
 
 | 상황 | 현재 동작 |
 | --- | --- |
@@ -105,8 +105,10 @@ OpenAI를 사용한다. `OPENAI_API_KEY`와 모델 설정을 대화 판독과 �
 | 원본 삭제 실패 | 1분 간격 주기 작업에서 재시도 |
 | 회원 탈퇴 | DB 삭제 전 두 키 수집·잠금 → Storage API 삭제 → DB 행 삭제. Storage 실패 시 DB 삭제 중단, 요청 재시도 가능 |
 | 최종 판정 직후 | 원본 즉시 삭제 시도. 실패 시 키를 보존하고 주기 작업으로 재시도 |
-| 7일 보관 만료 | 원본·가림 사진·요청 전체 정리 미구현 |
+| 7일 보관 만료 | 1분 주기·100건 배치로 파일 삭제 후 DB 정리. 실패한 요청은 키를 보존하고 다음 주기에 재시도 (#51) |
 
 CV는 삭제 전에 두 원본을 읽어야 한다. 가린 사진으로 최종 판정 원본을 대체하지 않는다. 최종 결과 저장 후 원본 삭제·재시도 경로를 연결했으며 삭제 성공 전에는 키를 보존한다.
 
 회원 탈퇴 담당자는 `masked_image`, `original_storage_key` 두 컬럼을 모두 수집해야 한다. 인증 실패 정리 스케줄러와 회원 탈퇴는 별도 경로이며, 회원 탈퇴용 백그라운드 삭제 큐가 있는 것은 아니다.
+
+7일 보관 만료의 배치·잠금·부분 실패·탈퇴 동시 실행 계약은 [보관 만료 정리](trueshot-retention.md)에 정리했다.
