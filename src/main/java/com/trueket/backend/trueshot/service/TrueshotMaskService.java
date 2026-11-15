@@ -11,7 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
-import java.security.SecureRandom;
 import java.util.*;
 
 @Service
@@ -22,43 +21,110 @@ public class TrueshotMaskService {
     private final TrueshotMaskStorage storage;
     private final TrueshotMaskRenderer renderer;
     private final ObjectMapper json=new ObjectMapper();
-    private final SecureRandom random=new SecureRandom();
+    private final SecondMissionService missions;
     public TrueshotMaskService(TrueshotRequestRepository requests,TrueshotPhotoRepository photos,
-            TrueshotMaskDetector detector,TrueshotMaskStorage storage,TrueshotMaskRenderer renderer) {
+            TrueshotMaskDetector detector,TrueshotMaskStorage storage,TrueshotMaskRenderer renderer,
+            SecondMissionService missions) {
         this.requests=requests; this.photos=photos; this.detector=detector; this.storage=storage; this.renderer=renderer;
+        this.missions=missions;
     }
 
     @Transactional
     public MaskResult prepare(String token) {
         TrueshotRequest request=locked(token);
         TrueshotPhoto photo=first(request);
-        if (photo.getMaskStatus()==MaskStatus.READY) return result(token,photo);
-        if (photo.getMaskStatus()==MaskStatus.FAILED) return result(token,photo);
+        preparePhoto(photo, () -> requireMasking(request));
+        return result(token,photo);
+    }
+
+    // 최종 판정 트랜잭션에서 호출하며 가림이 완료되기 전에는 원본을 삭제하지 않는다.
+    public void prepareSecond(TrueshotRequest request) {
+        if (request.getPhase()!=TrueshotPhase.JUDGING) {
+            throw new ApiException(HttpStatus.CONFLICT,"최종 판정 단계가 아니에요.");
+        }
+        var photo=photos.findByRequestIdAndNumber(request.getId(),(short)2).orElseThrow(this::notFound);
+        preparePhoto(photo, () -> {
+            if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+                throw new ApiException(HttpStatus.GONE,"요청 시간이 지났어요.");
+            }
+        });
+    }
+
+    private void preparePhoto(TrueshotPhoto photo,Runnable validate) {
+        if (photo.getMaskStatus()==MaskStatus.READY || photo.getMaskStatus()==MaskStatus.FAILED) return;
         byte[] original=storage.original(photo.getOriginalStorageKey());
         var detection=detector.detect(original);
+        validate.run();
         if (!detection.complete() || detection.boxes()==null || detection.boxes().isEmpty()
                 || detection.boxes().stream().anyMatch(box -> box==null || !box.valid())) {
             photo.maskingFailed();
-            return result(token,photo);
+            return;
         }
-        requireMasking(request);
         byte[] masked=renderer.render(original,detection.boxes());
-        String key="trueshots/"+request.getId()+"/"+UUID.randomUUID()+".jpg";
+        String key="trueshots/"+photo.getRequest().getId()+"/"+UUID.randomUUID()+".jpg";
         storage.saveMasked(key,masked);
         var boxes=json.createObjectNode();
         boxes.set("automatic",json.valueToTree(detection.boxes()));
         boxes.set("seller",json.createArrayNode());
         photo.maskingReady(key,boxes);
-        return result(token,photo);
     }
 
     @Transactional(readOnly=true)
-    public byte[] preview(String token) {
+    public byte[] preview(String token,short number) {
         TrueshotRequest request=requests.findByToken(token).orElseThrow(this::notFound);
-        requireMasking(request);
-        TrueshotPhoto photo=first(request);
+        if (number==1 && request.getPhase()==TrueshotPhase.FIRST_MASKING) requireMasking(request);
+        else requireSharing(request);
+        if (number!=1 && number!=2) throw notFound();
+        var photo=photos.findByRequestIdAndNumber(request.getId(),number).orElseThrow(this::notFound);
         if (photo.getMaskStatus()!=MaskStatus.READY || photo.getMaskedImage()==null) throw notFound();
         return storage.masked(photo.getMaskedImage());
+    }
+
+    @Transactional(noRollbackFor=ApiException.class)
+    public void share(String token,SharePhotos input) {
+        var request=requests.findByTokenForUpdate(token).orElseThrow(this::notFound);
+        // 완료한 공유 요청의 재전송은 파일을 수정하거나 공유 시각을 갱신하지 않는다.
+        if (request.getStatus()==TrueshotStatus.PASSED && request.getPhase()==TrueshotPhase.COMPLETED) return;
+        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+            request.closeShareWindow();
+            throw new ApiException(HttpStatus.GONE,"사진 공유 시간이 지났어요.");
+        }
+        requireSharing(request);
+        if (!input.sharePhotos()) {
+            if (!input.boxes().isEmpty()) throw new ApiException(HttpStatus.BAD_REQUEST,"공유하지 않을 때는 가림 영역을 비워 주세요.");
+            request.finishSharing(false,OffsetDateTime.now(ZoneOffset.UTC));
+            return;
+        }
+        var first=first(request);
+        var second=photos.findByRequestIdAndNumber(request.getId(),(short)2).orElseThrow(this::notFound);
+        if (first.getMaskStatus()!=MaskStatus.READY || second.getMaskStatus()!=MaskStatus.READY
+                || first.getMaskedImage()==null || second.getMaskedImage()==null) {
+            throw new ApiException(HttpStatus.CONFLICT,"두 사진의 개인정보 가림을 완료하지 못했어요.");
+        }
+        if (input.boxes().stream().anyMatch(box -> !box.valid())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,"추가 가림 영역을 확인해 주세요.");
+        }
+        if (!input.boxes().isEmpty()) {
+            byte[] masked=renderer.render(storage.masked(second.getMaskedImage()),input.boxes());
+            storage.saveMasked(second.getMaskedImage(),masked);
+            var boxes=second.getMaskBoxes().deepCopy();
+            ((com.fasterxml.jackson.databind.node.ObjectNode)boxes).set("seller",json.valueToTree(input.boxes()));
+            second.maskingReady(second.getMaskedImage(),boxes);
+        }
+        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+            request.closeShareWindow();
+            throw new ApiException(HttpStatus.GONE,"사진 공유 시간이 지났어요.");
+        }
+        request.finishSharing(true,OffsetDateTime.now(ZoneOffset.UTC));
+    }
+
+    private void requireSharing(TrueshotRequest request) {
+        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+            throw new ApiException(HttpStatus.GONE,"사진 공유 시간이 지났어요.");
+        }
+        if (request.getStatus()!=TrueshotStatus.PASSED || request.getPhase()!=TrueshotPhase.SHARE_WAITING) {
+            throw new ApiException(HttpStatus.CONFLICT,"사진 공유 단계가 아니에요.");
+        }
     }
 
     @Transactional
@@ -82,11 +148,9 @@ public class TrueshotMaskService {
         // 공개 직전의 서버 시각을 기준으로 1분을 부여한다. 전체 요청 기한은 그대로다.
         OffsetDateTime now=OffsetDateTime.now(ZoneOffset.UTC);
         requireMasking(request);
-        String side=random.nextBoolean()?"왼쪽":"오른쪽";
-        String action=random.nextBoolean()?"손가락 브이를 하고":"엄지를 들고";
-        String instruction="예매 화면 "+side+"에 "+action+" 촬영해 주세요.";
-        request.revealSecondInstruction(instruction,now);
-        return new SecondInstruction(instruction,request.getDeadline2(),request.getExpiresAt());
+        var mission=missions.generate();
+        request.revealSecondInstruction(mission,now);
+        return new SecondInstruction(request.getInstruction2(),mission,request.getDeadline2(),request.getExpiresAt());
     }
 
     private TrueshotRequest locked(String token) {

@@ -8,6 +8,8 @@ import com.trueket.backend.trueshot.dto.TrueshotDtos.RequestDetail;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.RequestSummary;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.SellerLink;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.SellerStart;
+import com.trueket.backend.trueshot.dto.TrueshotDtos.PhotoLink;
+import com.trueket.backend.trueshot.entity.enums.MaskStatus;
 import com.trueket.backend.trueshot.entity.TrueshotRequest;
 import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
 import com.trueket.backend.trueshot.repository.TrueshotRequestRepository;
@@ -32,13 +34,15 @@ public class TrueshotRequestService {
     private final UserRepository users;
     private final TrueshotPhotoRepository photos;
     private final SupabaseStorageDeletion storageDeletion;
+    private final TrueshotMaskStorage maskStorage;
 
     public TrueshotRequestService(TrueshotRequestRepository requests, UserRepository users,
-            TrueshotPhotoRepository photos, SupabaseStorageDeletion storageDeletion) {
+            TrueshotPhotoRepository photos, SupabaseStorageDeletion storageDeletion, TrueshotMaskStorage maskStorage) {
         this.requests = requests;
         this.users = users;
         this.photos = photos;
         this.storageDeletion = storageDeletion;
+        this.maskStorage = maskStorage;
     }
 
     @Transactional
@@ -66,7 +70,42 @@ public class TrueshotRequestService {
         activeUser(userId);
         TrueshotRequest request = requests.findByIdAndUserId(requestId, userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "트루샷 요청을 찾을 수 없어요."));
-        return RequestDetail.from(request, OffsetDateTime.now(ZoneOffset.UTC));
+        var now=OffsetDateTime.now(ZoneOffset.UTC);
+        var links=request.getStatus()==TrueshotStatus.PASSED && request.getPhotosSharedAt()!=null && now.isBefore(request.getPurgeAt())
+                ? photos.findByRequestId(requestId).stream()
+                    .filter(photo -> photo.getMaskStatus()==MaskStatus.READY && photo.getMaskedImage()!=null)
+                    .sorted(java.util.Comparator.comparing(com.trueket.backend.trueshot.entity.TrueshotPhoto::getNumber))
+                    .map(photo -> new PhotoLink(photo.getNumber(),"/trueshot/"+requestId+"/photos/"+photo.getNumber())).toList()
+                : List.<PhotoLink>of();
+        return RequestDetail.from(request, now, links);
+    }
+
+    @Transactional(readOnly=true)
+    public byte[] sharedPhoto(Long userId,Long requestId,short number) {
+        activeUser(userId);
+        var request=requests.findByIdAndUserId(requestId,userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,"사진을 찾을 수 없어요."));
+        if (request.getStatus()!=TrueshotStatus.PASSED || request.getPhotosSharedAt()==null
+                || !OffsetDateTime.now(ZoneOffset.UTC).isBefore(request.getPurgeAt())) {
+            throw new ApiException(HttpStatus.NOT_FOUND,"공유된 사진을 찾을 수 없어요.");
+        }
+        var photo=photos.findByRequestIdAndNumber(requestId,number)
+                .filter(value -> value.getMaskStatus()==MaskStatus.READY && value.getMaskedImage()!=null)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,"공유된 사진을 찾을 수 없어요."));
+        return maskStorage.masked(photo.getMaskedImage());
+    }
+
+    @Transactional
+    public boolean cleanFinalOriginals(Long requestId) {
+        var request=requests.findByIdForUpdate(requestId).orElse(null);
+        if (request==null || (request.getStatus()!=TrueshotStatus.PASSED && request.getStatus()!=TrueshotStatus.FAILED)) return false;
+        try {
+            deleteOriginals(requestId);
+            return true;
+        } catch (ApiException e) {
+            // 최종 결과와 원본 키를 보존한다. 다음 정리 작업에서 같은 키로 재시도한다.
+            return false;
+        }
     }
 
     @Transactional(readOnly = true)

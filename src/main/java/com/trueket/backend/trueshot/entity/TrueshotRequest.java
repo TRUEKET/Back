@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.trueket.backend.trueshot.entity.enums.TrueshotPhase;
 import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
 import com.trueket.backend.user.entity.User;
+import com.trueket.backend.trueshot.dto.SecondMission;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -58,6 +59,18 @@ public class TrueshotRequest {
     @Column(name = "instruction_2")
     private String instruction2;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mission_2_type")
+    private SecondMission.Type mission2Type;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mission_2_position")
+    private SecondMission.Direction mission2Position;
+
+    public SecondMission getMission2() {
+        return mission2Type == null ? null : SecondMission.of(mission2Type, mission2Position);
+    }
+
     @Column(name = "deadline_1")
     private OffsetDateTime deadline1;
 
@@ -92,6 +105,33 @@ public class TrueshotRequest {
 
     @Column(name = "judged_at")
     private OffsetDateTime judgedAt;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "judgment_result", columnDefinition = "jsonb")
+    private JsonNode judgmentResult;
+
+    public void storeJudgment(JsonNode result) {
+        if (phase != TrueshotPhase.JUDGING) throw new IllegalStateException("최종 판정 단계가 아닙니다.");
+        judgmentResult = result;
+    }
+
+    public void finishJudgment(boolean passed, boolean shareable, java.util.List<String> reasons, OffsetDateTime now) {
+        if (phase != TrueshotPhase.JUDGING || judgedAt != null) throw new IllegalStateException("최종 판정 단계가 아닙니다.");
+        judgedAt = now;
+        status = passed ? TrueshotStatus.PASSED : TrueshotStatus.FAILED;
+        phase = passed ? (shareable ? TrueshotPhase.SHARE_WAITING : TrueshotPhase.COMPLETED) : TrueshotPhase.FAILED;
+        ArrayNode failures = JsonNodeFactory.instance.arrayNode();
+        reasons.forEach(failures::add);
+        failReasons = failures;
+    }
+
+    public void finishSharing(boolean share, OffsetDateTime now) {
+        if (status != TrueshotStatus.PASSED || phase != TrueshotPhase.SHARE_WAITING || isExpired(now)) {
+            throw new IllegalStateException("사진을 공유할 수 없는 단계입니다.");
+        }
+        if (share) photosSharedAt = now;
+        phase = TrueshotPhase.COMPLETED;
+    }
 
     // 판정은 성공했지만 판매자가 30분 안에 사진을 공유하지 않은 경우 null이다.
     @Column(name = "photos_shared_at")
@@ -188,9 +228,11 @@ public class TrueshotRequest {
         phase = TrueshotPhase.JUDGING;
     }
 
-    public void revealSecondInstruction(String instruction, OffsetDateTime now) {
+    public void revealSecondInstruction(SecondMission mission, OffsetDateTime now) {
         if (phase != TrueshotPhase.FIRST_MASKING || isExpired(now)) throw new IllegalStateException("두 번째 지시를 공개할 수 없습니다.");
-        instruction2=instruction;
+        mission2Type=mission.type();
+        mission2Position=mission.position();
+        instruction2=mission.instruction();
         instruction2RevealedAt=now;
         deadline2=now.plusMinutes(1);
         phase=TrueshotPhase.SECOND_WAITING;

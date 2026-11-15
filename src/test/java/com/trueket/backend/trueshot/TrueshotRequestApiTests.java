@@ -7,6 +7,7 @@ import com.trueket.backend.trueshot.service.TrueshotFirstPhotoChecker;
 import com.trueket.backend.trueshot.service.TrueshotOriginalStore;
 import com.trueket.backend.trueshot.service.TrueshotMaskDetector;
 import com.trueket.backend.trueshot.service.TrueshotMaskStorage;
+import com.trueket.backend.trueshot.service.BookingScreenDetector;
 import com.trueket.backend.trueshot.dto.TrueshotMaskDtos.Box;
 import com.trueket.backend.user.entity.User;
 import com.trueket.backend.user.repository.UserRepository;
@@ -51,6 +52,7 @@ class TrueshotRequestApiTests {
     @MockitoBean TrueshotOriginalStore originals;
     @MockitoBean TrueshotMaskDetector maskDetector;
     @MockitoBean TrueshotMaskStorage maskStorage;
+    @MockitoBean BookingScreenDetector screens;
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
@@ -184,20 +186,41 @@ class TrueshotRequestApiTests {
                 .andExpect(status().isOk()).andExpect(content().contentType("image/jpeg"));
         mvc.perform(get("/trueshot/{id}",id).session(buyer.session()))
                 .andExpect(jsonPath("$.instruction2").isEmpty());
-        mvc.perform(post(path+"/first-mask/confirm").session(seller.session())
+        var confirmation=mvc.perform(post(path+"/first-mask/confirm").session(seller.session())
                         .header(seller.csrf().getHeaderName(),seller.csrf().getToken())
                         .contentType("application/json")
                         .content("{\"boxes\":[{\"x\":0.5,\"y\":0.5,\"width\":0.1,\"height\":0.1}]}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.instruction2").isString())
-                .andExpect(jsonPath("$.deadline2").exists());
+                .andExpect(jsonPath("$.deadline2").exists())
+                .andExpect(jsonPath("$.mission2.type").isString()).andReturn();
+        var mission=json.readTree(confirmation.getResponse().getContentAsString()).get("mission2");
+        assertEquals(mission.get("type").asText(),jdbc.queryForObject(
+                "select mission_2_type from trueshot_requests where id=?",String.class,id));
+        mvc.perform(get("/trueshot/{id}",id).session(buyer.session()))
+                .andExpect(jsonPath("$.mission2.type").value(mission.get("type").asText()));
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"예매"));
+        String direction=mission.path("position").asText();
+        int x=direction.equals("LEFT")?20:direction.equals("RIGHT")?380:200;
+        int y=direction.equals("ABOVE")?20:direction.equals("BELOW")?380:200;
+        String analysis="{\"imageWidth\":400,\"imageHeight\":400,\"hands\":[{\"x\":"+x+",\"y\":"+y
+                +",\"gesture\":\"Victory\",\"confidence\":0.96}]}";
+        var analysisPart=new MockMultipartFile("analysis","analysis.json","application/json",
+                analysis.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        mvc.perform(multipart("/hand-analyze").file(photo()).file(analysisPart).param("token",path.substring(3))
+                        .session(seller.session()).header(seller.csrf().getHeaderName(),seller.csrf().getToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.missionCheck.status").value("MATCHED"))
+                .andExpect(jsonPath("$.missionCheck.mission.type").value(mission.get("type").asText()));
+        mvc.perform(multipart("/hand-analyze").file(photo()).file(analysisPart).param("token",path.substring(3))
+                        .session(buyer.session()).header(buyer.csrf().getHeaderName(),buyer.csrf().getToken()))
+                .andExpect(status().isForbidden());
         OffsetDateTime revealed=jdbc.queryForObject("select instruction_2_revealed_at from trueshot_requests where id=?",OffsetDateTime.class,id);
         OffsetDateTime deadline=jdbc.queryForObject("select deadline_2 from trueshot_requests where id=?",OffsetDateTime.class,id);
         assertEquals(60,java.time.Duration.between(revealed,deadline).getSeconds());
-        mvc.perform(multipart(path + "/photo").file(photo()).param("n", "2")
+        mvc.perform(multipart(path + "/photo").file(photo()).file(analysisPart).param("n", "2")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.phase").value("JUDGING"));
-        mvc.perform(multipart(path + "/photo").file(photo()).param("n", "2")
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        mvc.perform(multipart(path + "/photo").file(photo()).file(analysisPart).param("n", "2")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isConflict());
     }

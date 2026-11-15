@@ -2,6 +2,8 @@ package com.trueket.backend.trueshot.service;
 
 import com.trueket.backend.global.exception.ApiException;
 import com.trueket.backend.trueshot.dto.TrueshotPhotoResponse;
+import com.trueket.backend.trueshot.dto.HandAnalysisDtos.Input;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trueket.backend.trueshot.entity.TrueshotPhoto;
 import com.trueket.backend.trueshot.entity.TrueshotRequest;
 import com.trueket.backend.trueshot.entity.enums.TrueshotPhase;
@@ -24,19 +26,22 @@ public class TrueshotPhotoService {
     private final TrueshotImageInput input;
     private final TrueshotFirstPhotoChecker firstChecker;
     private final TrueshotOriginalStore originals;
+    private final HandAnalysisService hands;
+    private final ObjectMapper json = new ObjectMapper();
 
     public TrueshotPhotoService(TrueshotRequestRepository requests, TrueshotPhotoRepository photos,
             TrueshotImageInput input, TrueshotFirstPhotoChecker firstChecker,
-            TrueshotOriginalStore originals) {
+            TrueshotOriginalStore originals, HandAnalysisService hands) {
         this.requests = requests;
         this.photos = photos;
         this.input = input;
         this.firstChecker = firstChecker;
         this.originals = originals;
+        this.hands = hands;
     }
 
     @Transactional(noRollbackFor = ApiException.class)
-    public TrueshotPhotoResponse upload(String token, short number, MultipartFile file) {
+    public TrueshotPhotoResponse upload(String token, short number, MultipartFile file, Input analysis) {
         if (number != 1 && number != 2) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "사진 번호는 1 또는 2여야 합니다.");
         }
@@ -49,7 +54,7 @@ public class TrueshotPhotoService {
                     "이 링크는 시간이 지났어요. 구매자에게 새 링크를 요청해 주세요");
         }
         if (number == 1) return uploadFirst(request, receivedAt, file);
-        return uploadSecond(request, receivedAt, file);
+        return uploadSecond(request, receivedAt, file, analysis);
     }
 
     private TrueshotPhotoResponse uploadFirst(TrueshotRequest request,
@@ -95,7 +100,7 @@ public class TrueshotPhotoService {
     }
 
     private TrueshotPhotoResponse uploadSecond(TrueshotRequest request,
-            OffsetDateTime receivedAt, MultipartFile file) {
+            OffsetDateTime receivedAt, MultipartFile file, Input analysis) {
         if (request.secondPhotoTimedOut(receivedAt)) {
             request.failForPhotoTimeout(2);
             throw new ApiException(HttpStatus.GONE, "1분 안에 두번째 인증 사진이 오지 않았어요.");
@@ -106,11 +111,14 @@ public class TrueshotPhotoService {
         if (photos.existsByRequestIdAndNumber(request.getId(), (short) 2)) {
             throw new ApiException(HttpStatus.CONFLICT, "두번째 사진은 한 번만 보낼 수 있어요.");
         }
-        TrueshotImageInput.Prepared prepared = input.prepare(file);
+        if (analysis == null) throw new ApiException(HttpStatus.BAD_REQUEST, "두 번째 사진의 손 인식 결과를 함께 보내 주세요.");
+        if (request.getMission2() == null) throw new ApiException(HttpStatus.CONFLICT, "새 트루샷 요청으로 진행해 주세요.");
+        TrueshotImageInput.Prepared prepared = hands.prepare(file, analysis);
         String key = key(request.getId());
         originals.upload(key, prepared.bytes(), prepared.mimeType());
         TrueshotPhoto photo = TrueshotPhoto.create(request, (short) 2, receivedAt);
         photo.storeOriginal(key);
+        photo.storeHandAnalysis(json.valueToTree(analysis));
         photos.save(photo);
         request.secondPhotoReceived(receivedAt);
         return new TrueshotPhotoResponse(2, request.getPhase(), true, null, List.of());
