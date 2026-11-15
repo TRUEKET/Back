@@ -11,7 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
-import java.security.SecureRandom;
 import java.util.*;
 
 @Service
@@ -22,10 +21,12 @@ public class TrueshotMaskService {
     private final TrueshotMaskStorage storage;
     private final TrueshotMaskRenderer renderer;
     private final ObjectMapper json=new ObjectMapper();
-    private final SecureRandom random=new SecureRandom();
+    private final SecondMissionService missions;
     public TrueshotMaskService(TrueshotRequestRepository requests,TrueshotPhotoRepository photos,
-            TrueshotMaskDetector detector,TrueshotMaskStorage storage,TrueshotMaskRenderer renderer) {
+            TrueshotMaskDetector detector,TrueshotMaskStorage storage,TrueshotMaskRenderer renderer,
+            SecondMissionService missions) {
         this.requests=requests; this.photos=photos; this.detector=detector; this.storage=storage; this.renderer=renderer;
+        this.missions=missions;
     }
 
     @Transactional
@@ -82,11 +83,9 @@ public class TrueshotMaskService {
         // 공개 직전의 서버 시각을 기준으로 1분을 부여한다. 전체 요청 기한은 그대로다.
         OffsetDateTime now=OffsetDateTime.now(ZoneOffset.UTC);
         requireMasking(request);
-        String side=random.nextBoolean()?"왼쪽":"오른쪽";
-        String action=random.nextBoolean()?"손가락 브이를 하고":"엄지를 들고";
-        String instruction="예매 화면 "+side+"에 "+action+" 촬영해 주세요.";
-        request.revealSecondInstruction(instruction,now);
-        return new SecondInstruction(instruction,request.getDeadline2(),request.getExpiresAt());
+        var mission=missions.generate();
+        request.revealSecondInstruction(mission,now);
+        return new SecondInstruction(request.getInstruction2(),mission,request.getDeadline2(),request.getExpiresAt());
     }
 
     private TrueshotRequest locked(String token) {
