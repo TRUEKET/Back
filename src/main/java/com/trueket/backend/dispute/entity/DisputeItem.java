@@ -65,15 +65,25 @@ public class DisputeItem {
     }
 
     // 신고 작성자의 처리 결정
+
     public void decide(DisputeItemStatus decision) {
         if (decision != DisputeItemStatus.MAINTAINED
-                && decision != DisputeItemStatus.DELETED
-                && decision != DisputeItemStatus.PRIVATE) {
-            throw new IllegalArgumentException("올바르지 않은 처리 결정입니다.");
+                && decision != DisputeItemStatus.DELETED) {
+            throw new IllegalArgumentException(
+                    "유지 또는 삭제만 선택할 수 있습니다."
+            );
         }
 
         if (this.status != DisputeItemStatus.RESPONDING) {
-            throw new IllegalStateException("이미 처리된 이의제기입니다.");
+            throw new IllegalStateException(
+                    "이미 처리된 이의제기입니다."
+            );
+        }
+
+        if (!OffsetDateTime.now().isBefore(this.deadline)) {
+            throw new IllegalStateException(
+                    "이의제기 응답 기한이 지났습니다."
+            );
         }
 
         this.status = decision;
@@ -81,10 +91,11 @@ public class DisputeItem {
 
         if (decision == DisputeItemStatus.MAINTAINED) {
             this.report.publish();
-        } else if (decision == DisputeItemStatus.PRIVATE) {
-            this.report.makePrivate();
         }
+
+        // DELETED는 기존 RP-07 삭제 서비스에서 처리
     }
+
 
     // 트루켓의 명의도용 검토 진행
     public void markReviewing() {
@@ -111,6 +122,20 @@ public class DisputeItem {
         this.republished = true;
         this.status = DisputeItemStatus.MAINTAINED;
         this.report.publish();
+    }
+
+    public void expireWithoutResponse(OffsetDateTime now) {
+        if (this.status != DisputeItemStatus.RESPONDING) {
+            return;
+        }
+
+        if (now.isBefore(this.deadline)) {
+            return;
+        }
+
+        this.status = DisputeItemStatus.PRIVATE;
+        this.decidedAt = now;
+        this.report.makePrivate();
     }
     
 }
