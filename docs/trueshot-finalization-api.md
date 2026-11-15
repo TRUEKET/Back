@@ -1,8 +1,6 @@
-# 트루샷 최종 판정·사진 공유 API (#49)
+# 트루샷 최종 판정·사진 공유 API
 
-## 실행 준비
-
-기존 OpenAI 및 Private Supabase Storage 설정을 사용한다. `src/main/resources/db/trueshot-judgment-schema.sql`을 서버 실행 전에 적용한다. 새 컬럼은 `trueshot_photos.hand_analysis`, `trueshot_requests.judgment_result` 두 JSONB이며 기존 데이터는 변경하지 않는다. 자동 마이그레이션은 없고 이 작업에서 실제 DB에는 적용하지 않았다.
+공통 인증·사진 제한과 전체 API 목록은 [트루샷 API](trueshot-api.md), 실행 설정은 [AI·DB·Storage 안내](trueshot-ai-cv.md)를 참고한다.
 
 ## 2차 사진 제출
 
@@ -12,9 +10,11 @@
 {"imageWidth":1000,"imageHeight":800,"hands":[{"x":300,"y":420,"gesture":"Victory","confidence":0.96}]}
 ```
 
-첫 사진(n=1)에는 analysis가 필요 없다. 2차에서는 필수이며 손 없음은 빈 hands 배열을 보낸다. 사진과 좌표는 회전을 적용한 동일 canvas 기준이다. 검지 끝·신뢰도·EXIF 계약은 [손 분석 API](hand-analyze-api.md)와 같다.
+첫 사진(n=1)에는 analysis가 필요 없다. 2차에서는 필수이며 손 없음은 빈 hands 배열을 보낸다. 사진과 좌표는 회전을 적용한 동일 canvas 기준이다. 검지 끝·신뢰도·EXIF 계약은 [MediaPipe 입력 명세](hand-analyze-api.md)와 같다.
 
 접수 트랜잭션에서 파일과 분석 입력을 저장한 뒤 JUDGING으로 바꾼다. 그 다음 별도 트랜잭션에서 서버 저장 미션과 비교한다. 별도 손 분석 호출은 없으며 클라이언트 통과 값을 받지 않는다. 접수한 원본과 MediaPipe 입력으로 서버에서 분석·판정한다.
+
+주요 응답 필드 예시(전체 필드는 [사진 제출](trueshot-api.md#3-사진-제출) 참고):
 
 ```json
 {"number":2,"phase":"SHARE_WAITING","accepted":true,"deadline":null,"retryReasons":[]}
@@ -40,6 +40,8 @@
 시작한 판매자 세션과 CSRF 토큰을 유지한다(GET은 CSRF 불필요).
 
 - `GET /s/{token}/result`: 현재 상태·공유 가능 여부 조회
+
+주요 결과 필드 예시(체크 항목·복구 필드는 아래 설명 참고):
 
 ```json
 {"status":"PASSED","phase":"SHARE_WAITING","judgedAt":"2026-11-15T10:00:00Z","photosSharedAt":null,"canShare":true,"message":"사진 확인을 완료했어요."}
@@ -78,15 +80,9 @@ photos 예시:
 
 공유 전·공유 거절·실패·가림 미완료·보관 기한 만료 상태에서는 사진 목록이 비고 다운로드는 404다. 다른 구매자도 404, 비로그인은 401이다. 모든 사진 및 결과 응답은 Cache-Control: no-store다. URL은 인증이 필요한 서버 경로이며 공개 Storage URL이 아니다.
 
-## 원본 정리·남은 검증
-
-최종 성공/실패 결과를 확정한 뒤 원본 두 장의 삭제를 즉시 시도한다. 삭제 오류가 나도 결과는 유지한다. 파일 키와 삭제 시각은 삭제 성공 때만 갱신하고, 기존 주기 작업에서 PASSED/FAILED 원본을 재시도한다. 가림/판정에 필요한 원본을 처리 도중 지우지 않는다.
-
-자동 테스트는 H2와 대체 모델/Storage로 상태·권한·동의·만료·일시 장애·삭제 재시도·동시 판정을 검증한다. 실제 React·모바일 회전·LLM 화면 좌표·가림 정확도 및 실제 Storage 통합은 실연동에서 검증해야 한다. 7일 보관 만료 전체 삭제는 #51에서 연결했다. [보관 만료 정리](trueshot-retention.md)를 참고한다.
-
 ## 판매자 화면 체크 결과
 
-사진 제출 응답에 기존 필드를 유지하고 `checks`, `failReasons`를 추가한다. checks는 제출한 사진에 해당하는 항목만 포함한다. GET result, POST share 응답에는 두 사진의 체크 항목을 함께 제공한다.
+사진 제출 응답의 `checks`, `failReasons`로 항목별 결과를 표시한다. checks는 제출한 사진에 해당하는 항목만 포함한다. GET result, POST share 응답에는 두 사진의 체크 항목을 함께 제공한다.
 
 첫 사진 코드 불일치 응답 예시:
 
@@ -122,18 +118,16 @@ AI·Storage 일시 장애 시 PENDING을 반환하고 failReasons는 비워 둔�
 
 retryReasons는 첫 사진 재촬영 안내, failReasons는 해당 응답의 실패 사유 목록이다. 첫 사진의 failReasons는 재촬영 실패 안내이며 요청 전체가 최종 FAILED라는 의미는 아니다. 최종 판정 상태는 최상위 status/phase로 판단한다.
 
-이 보완은 기존 judgment_result JSON 안에 관측값을 저장하므로 새 DB 컬럼·SQL 적용은 필요 없다. 화질 관측의 실제 사진 정확도는 프론트 연동에서 검증한다.
-
 ## 판정 대기 시간·프론트 로딩 종료
 
 - 접수 직후 최초 판정을 실행한다. 일시 장애 시 기본 10초 간격으로 대기 요청을 다시 확인한다. 각 주기는 이전 작업 완료 후 시작하므로 처리량과 외부 서비스 응답에 따라 실제 간격이 길어질 수 있다.
 - 판정 마감은 두 번째 사진의 서버 수신 시각 + 기본 60초와 전체 요청 expires_at 중 빠른 값이다. 재시도해도 연장하지 않는다. 생성 시 정한 마감은 기존 judgment_result의 deadline에 저장한다.
-- 결과 조회에 judgmentDeadline, pollAfterMillis, failureCode를 추가한다. JUDGING일 때 pollAfterMillis는 2000이며 그 외에는 null이다. 사진 제출 응답도 JUDGING이면 기존 deadline 필드에 판정 마감을 반환한다.
+- 결과 조회의 judgmentDeadline은 판정 마감, pollAfterMillis는 권장 조회 간격, failureCode는 실패 코드다. JUDGING일 때 pollAfterMillis는 2000이며 그 외에는 null이다. 사진 제출 응답도 JUDGING이면 기존 deadline 필드에 판정 마감을 반환한다.
 - 프론트는 JUDGING 동안 약 2초마다 GET result로 조회하고, 다른 phase가 되면 로딩·조회 타이머를 종료한다. message를 그대로 표시하거나 문구 분기 자료로 사용할 수 있다. 10초 이상 대기하면 지연 안내 문구를 반환한다.
 - 마감이 지난 결과 조회는 작업 실행을 기다리지 않고 FAILED·failureCode=ANALYSIS_TIMEOUT·안내 사유를 반환한다. 처리 중이던 외부 I/O가 즉시 취소되는 하드 타임아웃은 아니며, 실제 상태 저장·원본 정리는 해당 작업 또는 다음 재시도에서 수행한다.
 - 마감 이후 도착한 성공 응답도 통과시키지 않는다. 가림 대기 중 임시로 저장한 passed=true도 시간 초과 확정 시 제거한다. 손 모양 불일치·저화질로 오인시키지 않도록 미완료 2차 체크는 NOT_CHECKED로 표시한다.
 
-결과 조회의 추가 필드 예시:
+판정 대기 필드 예시:
 
 ```json
 {
@@ -145,18 +139,17 @@ retryReasons는 첫 사진 재촬영 안내, failReasons는 해당 응답의 실
 
 분석 시간 초과 시 status와 phase는 FAILED, pollAfterMillis는 null, failureCode는 ANALYSIS_TIMEOUT이다. 새 인증 링크를 요청하도록 안내하며 수동 재시도 API나 사진 재업로드로 기존 요청을 되살리지 않는다.
 
-설정값:
-
-| 환경변수 | 기본값 | 의미 |
-| --- | --- | --- |
-| TRUESHOT_JUDGMENT_RETRY_DELAY_MS | 10000 | 자동 재시도 작업 간격(ms) |
-| TRUESHOT_JUDGMENT_MAX_WAIT | 60s | 사진 접수 후 최대 판정 대기 시간 |
-
-설정 변경은 새로 접수한 사진에 적용한다. 진행 중 요청은 저장된 마감을 유지한다. 이전 기록에 마감이 없으면 수신 시각 + 60초를 적용한다. 새 DB 컬럼·SQL 적용은 필요 없다.
+재시도 간격과 대기 시간의 환경변수는 [운영 설정](trueshot-ai-cv.md#실행-설정)을 참고한다.
 
 ## 판매자 새로고침·재접속 복구
 
-시작한 판매자 세션이 유지되어 있으면 `GET /s/{token}/result` 한 번으로 촬영·가림·판정·공유 화면을 복원한다. 기존 결과 필드를 유지하면서 아래 정보를 추가했다. POST share 응답에도 같은 형식이 적용된다.
+시작한 판매자 세션이 유지되어 있으면 `GET /s/{token}/result` 한 번으로 촬영·가림·판정·공유 화면을 복원한다. POST share 응답도 같은 형식이다. 전체 응답 필드는 다음과 같다.
+
+```text
+status, phase, judgedAt, photosSharedAt, canShare, message, checks, failReasons,
+judgmentDeadline, pollAfterMillis, failureCode, title, code, instruction2, mission2,
+expiresAt, deadline1, deadline2, serverTime, photos
+```
 
 | 필드 | 의미 |
 | --- | --- |
@@ -167,7 +160,7 @@ retryReasons는 첫 사진 재촬영 안내, failReasons는 해당 응답의 실
 | serverTime | 응답 생성 시 서버 시각. 클라이언트 시계 차이 보정에 사용 |
 | photos | 접수된 사진별 number, maskStatus, previewPath 목록 |
 
-FIRST_MASKING 단계의 추가 필드 예시:
+FIRST_MASKING 단계의 복구 필드 예시:
 
 ```json
 {
@@ -194,10 +187,10 @@ photos에는 접수된 사진만 포함한다. maskStatus는 PENDING/READY/FAILE
 | SHARE_WAITING | 두 가림 미리보기와 canShare로 최종 확인·공유 화면 복원 |
 | COMPLETED / FAILED | 결과 화면 표시. 미리보기 편집 경로는 제공하지 않음 |
 
-가로·세로 촬영 마감이 응답에 함께 있더라도 현재 phase에 해당하는 마감만 타이머로 표시한다. 남은 시간은 응답 기준으로 deadline - serverTime을 계산한다. 새로고침 시 POST start나 POST first-mask/confirm을 다시 호출하지 않는다. GET result는 미션·코드·마감·가림 상태를 생성하거나 변경하지 않으며 외부 AI·Storage도 호출하지 않는다.
+첫 번째·두 번째 촬영 마감이 응답에 함께 있더라도 현재 phase에 해당하는 마감만 타이머로 표시한다. 남은 시간은 응답 기준으로 deadline - serverTime을 계산한다. 새로고침 시 POST start나 POST first-mask/confirm을 다시 호출하지 않는다. GET result는 미션·코드·마감·가림 상태를 생성하거나 변경하지 않으며 외부 AI·Storage도 호출하지 않는다.
 
 페이지 진입 시 credentials:include로 GET result를 먼저 확인한다. 200이면 해당 단계로 복구하고, 시작 전 또는 판매자 세션이 없는 경우 403이므로 기존 공개 GET /s/{token}으로 최초 안내 화면 진입 가능 여부를 확인한다. 이 공개 경로는 기존대로 사용 중인 링크를 409로 거절하며 인증코드를 노출하지 않는다.
 
 다른 브라우저·쿠키 삭제·세션 만료 시에는 token만으로 판매자 권한을 복구하지 않는다. 이전 브라우저 세션을 사용할 수 없으면 새 링크로 시작해야 한다. 같은 세션이라도 요청/촬영/분석 마감이 지났으면 기존 실패 상태를 보여주고 시간을 연장하지 않는다. 보관 만료로 요청이 삭제됐으면 404다.
 
-아직 제출하지 않은 사진과 서버에 저장하지 않은 브러시 작업은 복구하지 않는다. 이 변경에는 새 API·DB 컬럼·SQL 적용이 필요 없다.
+아직 제출하지 않은 사진과 서버에 저장하지 않은 브러시 작업은 복구하지 않는다.

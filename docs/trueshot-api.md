@@ -1,6 +1,11 @@
 # 트루샷 API
 
-현재 구현된 API의 요청·응답과 프론트 연결 방법이다. AI·CV 미션, DB 상태와 사진 삭제 계약은 [팀 연동 문서](trueshot-ai-cv.md)를 참고한다.
+구매자 요청 생성부터 판매자 촬영·판정·사진 공유까지의 API 안내다.
+
+- [2차 판정·결과 조회·사진 공유·화면 복구](trueshot-finalization-api.md)
+- [MediaPipe 입력과 프론트 전송 예제](hand-analyze-api.md)
+- [AI·DB·Storage 설정과 데이터 처리](trueshot-ai-cv.md)
+- [7일 보관 및 자동 삭제](trueshot-retention.md)
 
 ## 공통 규칙
 
@@ -11,19 +16,22 @@
 - 응답은 `Cache-Control: no-store`다. 시각은 서버가 정한 ISO 8601 값이며 타이머는 반환된 마감 시각을 사용한다.
 - 사진은 JPEG·PNG만, 최대 5MB(5 × 1024 × 1024바이트)다. 실제 형식과 해상도(가로·세로 각각 320픽셀 이상, 전체 4천만 픽셀 이하)를 검사하고 JPEG로 변환한다.
 
-## 구현된 경로
+## API 목록 (12개)
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
 | POST | `/trueshot` | 구매자 요청 생성 |
 | GET | `/trueshot` | 내 요청 목록 |
 | GET | `/trueshot/{id}` | 내 요청 상세·진행 상황 |
+| GET | `/trueshot/{id}/photos/{number}` | 구매자용 공유된 가림 사진 |
 | GET | `/s/{token}` | 판매자 시작 전 안내 |
 | POST | `/s/{token}/start` | 동의 기록·첫 촬영 시작 |
 | POST | `/s/{token}/photo` | 첫 번째·두 번째 사진 제출 |
 | POST | `/s/{token}/mask` | 첫 사진 자동 가림 생성 |
-| GET | `/s/{token}/preview/1` | 판매자용 가린 사진 미리보기 |
+| GET | `/s/{token}/preview/{number}` | 판매자용 가린 사진 미리보기 |
 | POST | `/s/{token}/first-mask/confirm` | 추가 가림 저장·두 번째 촬영 시작 |
+| GET | `/s/{token}/result` | 판매자 결과·진행 상태·화면 복구 |
+| POST | `/s/{token}/share` | 두 번째 추가 가림·사진 공유 동의/거절 |
 
 ## 1. 요청 생성·조회
 
@@ -42,9 +50,9 @@
 내 요청 상세를 반환한다. 필드는 다음과 같다.
 
 ```text
-id, title, code, sellerPath, status, phase, instruction2,
+id, title, code, sellerPath, status, phase, instruction2, mission2,
 createdAt, expiresAt, startedAt, deadline1, deadline2,
-photosSharedAt, failReasons
+photosSharedAt, failReasons, judgedAt, judgmentResult, photos
 ```
 
 `sellerPath`는 `/s/{token}` 상대 경로다. `instruction2`는 두 번째 촬영을 시작하기 전까지 null이다. 다른 구매자의 요청은 `404`다.
@@ -73,7 +81,9 @@ n: 1 또는 2 (Text)
 photo: 사진 파일 1개 (File)
 ```
 
-Postman의 multipart Content-Type과 boundary는 자동 설정을 사용한다.
+2차 사진은 `analysis` JSON part도 필수다. [MediaPipe 입력 형식](hand-analyze-api.md)을 참고한다. multipart Content-Type과 boundary는 클라이언트가 자동 설정하도록 한다.
+
+제출 응답 필드는 `number`, `phase`, `accepted`, `deadline`, `retryReasons`, `checks`, `failReasons`다. 아래 예시는 주요 필드만 표시한다. 체크 항목 형식은 [판매자 화면 체크 결과](trueshot-finalization-api.md#판매자-화면-체크-결과)를 참고한다.
 
 첫 사진은 OpenAI로 코드 표시 여부·일치·화질을 확인한다. 실패 사진은 저장하지 않는다. 검사 시간을 3분 제한에서 제외하며 전체 30분 요청 기한은 연장하지 않는다.
 
@@ -96,10 +106,10 @@ Postman의 multipart Content-Type과 boundary는 자동 설정을 사용한다.
 두 번째 사진 접수 (`200`):
 
 ```json
-{"number":2,"phase":"JUDGING","accepted":true,"deadline":null,"retryReasons":[]}
+{"number":2,"phase":"JUDGING","accepted":true,"deadline":"2026-11-15T12:01:00Z","retryReasons":[]}
 ```
 
-`accepted`는 접수 성공이다. 2차 사진은 최종 판정까지 연결하며 재제출할 수 없다. 2차 제출에는 사진과 같은 이미지의 MediaPipe 결과를 analysis JSON part로 함께 보내야 한다. 외부 서비스 장애 시 JUDGING으로 접수 결과를 반환하고 동일 원본으로 재시도한다. 상세 계약은 [최종 판정·공유 API](trueshot-finalization-api.md)를 참고한다. 업로드 마감 검사에 별도의 전송 유예 초는 없다.
+`deadline`은 JUDGING일 때 판정 마감이며, 판정이 끝나면 null이다. `accepted`는 접수 성공이다. 2차 사진은 최종 판정까지 연결하며 재제출할 수 없다. 2차 제출에는 사진과 같은 이미지의 MediaPipe 결과를 analysis JSON part로 함께 보내야 한다. 외부 서비스 장애 시 JUDGING으로 접수 결과를 반환하고 동일 원본으로 재시도한다. 상세 계약은 [최종 판정·공유 API](trueshot-finalization-api.md)를 참고한다. 업로드 마감 검사에 별도의 전송 유예 초는 없다.
 
 ## 4. 첫 사진 가림·두 번째 촬영 시작
 
@@ -133,7 +143,7 @@ Postman의 multipart Content-Type과 boundary는 자동 설정을 사용한다.
 {"instruction2":"브이를 예매 화면 왼쪽에 두고 찍어 주세요.","mission2":{"type":"GESTURE_POSITION","gesture":"Victory","position":"LEFT"},"deadline2":"2026-11-13T12:05:00Z","expiresAt":"2026-11-13T12:30:00Z"}
 ```
 
-`deadline2`는 지시 공개 시각 + 1분이며 전체 요청 기한도 적용된다. 재확인은 `409`이고 타이머를 다시 시작하지 않는다. 자동 가림이 `FAILED`여도 빈 영역 목록으로 다음 촬영은 시작할 수 있지만 사진은 비공개로 유지한다. 최종 전송 기능에서도 이 상태를 검사해야 한다.
+`deadline2`는 지시 공개 시각 + 1분이며 전체 요청 기한도 적용된다. 재확인은 `409`이고 타이머를 다시 시작하지 않는다. 자동 가림이 `FAILED`여도 빈 영역 목록으로 다음 촬영은 시작할 수 있지만 사진은 비공개로 유지한다. 두 사진의 가림이 모두 준비되어야 사진 공유가 가능하다.
 
 ## 오류 코드
 
@@ -149,13 +159,3 @@ Postman의 multipart Content-Type과 boundary는 자동 설정을 사용한다.
 | 503 | OpenAI·Storage 처리 실패 |
 
 업무 오류는 보통 `{"message":"안내 문구"}`다. Spring Security의 인증·CSRF 오류는 응답 형식이 다를 수 있다.
-
-## 미구현·검증 범위
-
-미션 생성·저장, 최종 판정·2차 가림·판매자 공유·구매자 사진 조회 및 원본 삭제 재시도를 연결했다. 7일 보관 만료 전체 삭제는 #51에서 연결했다([보관 만료 정리](trueshot-retention.md)). 실제 프론트엔드·모바일 사진 연동과 제목 수정은 남은 작업이다.
-
-최종 판정과 공유의 요청·응답, 상태 전이, 오류 및 DB 준비는 [최종 판정·공유 API](trueshot-finalization-api.md)에 정리했다.
-
-사진 제출 및 판매자 결과 조회에 화질·인증코드·미션별 checks와 failReasons를 추가했다. 상태값과 프론트 표시 규칙은 [최종 판정·공유 명세의 판매자 화면 체크 결과](trueshot-finalization-api.md#판매자-화면-체크-결과)를 참고한다.
-
-판매자가 새로고침한 경우 GET /s/{token}/result에서 기존 코드·미션·마감·사진별 가림 상태 및 허용된 미리보기 경로를 받아 화면을 복구한다. [복구 필드와 단계별 동작](trueshot-finalization-api.md#판매자-새로고침재접속-복구)을 참고한다.

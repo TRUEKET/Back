@@ -2,7 +2,7 @@
 
 React에서 MediaPipe로 손 좌표·동작을 추출하고 사진과 결과를 2차 사진 제출 API로 함께 보낸다. Spring Boot는 같은 사진에서 예매 화면을 LLM으로 찾고 서버 저장 미션과 비교해 최종 결과를 저장한다. 별도 Python 서버·모델 학습은 필요 없다.
 
-기존 독립 손 분석 API는 제거했다. 사진 제출 전에 별도 서버 분석을 호출하지 않는다. 파일명은 기존 문서 링크를 유지하기 위해 그대로 사용한다.
+손 분석은 2차 사진 제출에 포함한다. 사진 제출 전에 별도 서버 분석을 호출하지 않는다.
 
 ## 요청
 
@@ -86,13 +86,17 @@ async function submitSecondPhoto(token: string, capturedPhoto: Blob, recognizer:
 
 ## 응답·후속 처리
 
+주요 응답 필드 예시:
+
 ```json
 {"number":2,"phase":"SHARE_WAITING","accepted":true,"deadline":null,"retryReasons":[]}
 ```
 
 accepted는 접수 성공이며 최종 인증 성공 여부와 구분한다. phase는 정상 판정·가림 완료 시 SHARE_WAITING, 불일치 시 FAILED, 가림이 불확실해 결과만 제공하면 COMPLETED, 외부 서비스 일시 장애 시 JUDGING일 수 있다.
 
-`GET /s/{token}/result`로 판매자 결과를 조회한다. 제출 응답에는 해당 사진의 checks·failReasons, 결과 조회에는 두 사진의 checks·failReasons가 포함된다. JUDGING이면 사진을 다시 업로드하지 않고 결과를 조회한다. 서버가 같은 원본으로 기본 10초 간격으로 자동 재시도하며, 접수 후 최대 기본 60초를 넘기면 분석 시간 초과로 종료한다. 수동 재시도 API는 제공하지 않는다. 구매자는 로그인한 소유자 권한으로 `GET /trueshot/{id}`에서 최종 결과와 체크 내용을 확인한다. 내부 분석의 화면·손 좌표와 OCR 원문을 별도 응답으로 직접 반환하지 않는다.
+`GET /s/{token}/result`로 판매자 결과를 조회한다. 제출 응답에는 해당 사진의 checks·failReasons, 결과 조회에는 두 사진의 checks·failReasons가 포함된다. 내부 화면·손 좌표와 OCR 원문을 별도 분석 응답으로 반환하지 않는다.
+
+JUDGING이면 사진을 재업로드하지 않고 result의 pollAfterMillis(기본 2000)에 맞춰 조회한다. 다른 phase가 되면 로딩을 종료한다. judgmentDeadline은 판정 마감이며, 제출 응답의 deadline에도 같은 마감을 제공한다. failureCode=ANALYSIS_TIMEOUT이면 분석 시간 초과다. [결과·로딩 처리 명세](trueshot-finalization-api.md#판정-대기-시간프론트-로딩-종료)를 참고한다.
 
 ## 미션 비교
 
@@ -104,8 +108,6 @@ accepted는 접수 성공이며 최종 인증 성공 여부와 구분한다. pha
 
 오류는 400 잘못된 사진·analysis·좌표·EXIF, 403 판매자 세션·CSRF, 409 중복 제출·단계 불일치, 410 제한 시간 초과, 413 용량 초과, 415 part Content-Type 오류다. 접수 후 외부 서비스 장애는 JUDGING에서 재시도한다.
 
-최종 판정 저장·가림·공유·원본 정리·재시도는 [최종 판정·공유 명세](trueshot-finalization-api.md)를 따른다. 실제 React·모바일 회전·사진 정확도는 실연동에서 검증한다.
+최종 판정 저장·가림·공유·원본 정리·재시도는 [최종 판정·공유 명세](trueshot-finalization-api.md)를 따른다.
 
 참고: [팀 지정 샘플](https://github.com/google-ai-edge/mediapipe-samples-web/blob/main/src/tasks/gesture-recognizer.ts), [공식 Web 가이드](https://developers.google.com/edge/mediapipe/solutions/vision/gesture_recognizer?tab=Web).
-
-JUDGING 동안 GET result의 pollAfterMillis(기본 2000)에 맞춰 조회하고, 다른 phase가 되면 로딩을 종료한다. judgmentDeadline은 판정 마감, failureCode=ANALYSIS_TIMEOUT은 분석 시간 초과다. JUDGING 제출 응답의 deadline에도 판정 마감을 제공한다. [대기 시간 설정과 처리 기준](trueshot-finalization-api.md#판정-대기-시간프론트-로딩-종료)을 참고한다.
