@@ -84,7 +84,8 @@
         "accounts": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "description": "판매자의 은행명과 전체 계좌번호를 한 문자열로 반환. 형식: 은행명 공백 숫자. 은행·숫자를 추측하거나 예시를 복사하지 않는다. 은행 누락·가림·불확실은 생략."
           }
         },
         "phones": {
