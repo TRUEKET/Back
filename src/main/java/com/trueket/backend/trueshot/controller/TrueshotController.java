@@ -35,7 +35,7 @@ public class TrueshotController {
         this.service = service;
     }
 
-    @Operation(summary = "트루샷 요청 생성", description = "제목은 최대 20자입니다. null 또는 공백이면 기본 제목을 사용합니다. 판매자에게 sellerPath를 전달하세요.")
+    @Operation(summary = "트루샷 요청 생성", description = "구매자가 인증 요청을 만들 때 호출합니다. 응답의 sellerPath를 판매자에게 전달합니다.")
     @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true, schema = @Schema(type = "string"),
             description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
     @ApiResponse(responseCode = "201", description = "인증 요청 생성 완료")
@@ -47,7 +47,7 @@ public class TrueshotController {
         return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(result);
     }
 
-    @Operation(summary = "내 트루샷 요청 목록 조회", description = "본인의 요청을 생성일 내림차순으로 반환합니다.")
+    @Operation(summary = "내 트루샷 요청 목록 조회", description = "구매자가 트루샷 요청 목록 화면에 들어오거나 목록을 새로고침할 때 호출합니다.")
     @ApiResponse(responseCode = "200", description = "요청 목록 조회 완료")
     @GetMapping
     public ResponseEntity<List<RequestSummary>> list(@Parameter(hidden = true) Authentication authentication) {
@@ -55,7 +55,7 @@ public class TrueshotController {
                 .body(service.list(Long.valueOf(authentication.getName())));
     }
 
-    @Operation(summary = "트루샷 요청 상세 조회", description = "본인의 요청만 조회할 수 있습니다. 인증 성공 및 판매자 공유 동의 후 보관 기간 내에 사진 링크를 반환합니다.")
+    @Operation(summary = "트루샷 요청 상세 조회", description = "구매자가 요청 상세 화면에서 진행 상황과 인증 결과를 확인할 때 호출합니다.")
     @ApiResponse(responseCode = "200", description = "요청 상세 조회 완료")
     @ApiResponse(responseCode = "404", description = "요청이 없거나 다른 구매자의 요청", content = @Content)
     @GetMapping("/{id}")
@@ -64,7 +64,7 @@ public class TrueshotController {
                 .body(service.detail(Long.valueOf(authentication.getName()), id));
     }
 
-    @Operation(summary = "공유된 마스킹 사진 조회", description = "인증 성공 및 판매자 공유 동의가 완료된 본인의 요청에 한해 JPEG 사진을 반환합니다.")
+    @Operation(summary = "공유된 마스킹 사진 조회", description = "구매자가 요청 상세 응답의 photos에 포함된 공유 사진을 표시할 때 호출합니다.")
     @ApiResponse(responseCode = "200", description = "마스킹된 JPEG 사진", content = @Content(mediaType = "image/jpeg", schema = @Schema(type = "string", format = "binary")))
     @ApiResponse(responseCode = "404", description = "사진 없음, 미공유 또는 보관 기간 만료", content = @Content)
     @GetMapping(value="/{id}/photos/{number}",produces=org.springframework.http.MediaType.IMAGE_JPEG_VALUE)
