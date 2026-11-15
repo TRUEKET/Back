@@ -153,3 +153,51 @@ retryReasons는 첫 사진 재촬영 안내, failReasons는 해당 응답의 실
 | TRUESHOT_JUDGMENT_MAX_WAIT | 60s | 사진 접수 후 최대 판정 대기 시간 |
 
 설정 변경은 새로 접수한 사진에 적용한다. 진행 중 요청은 저장된 마감을 유지한다. 이전 기록에 마감이 없으면 수신 시각 + 60초를 적용한다. 새 DB 컬럼·SQL 적용은 필요 없다.
+
+## 판매자 새로고침·재접속 복구
+
+시작한 판매자 세션이 유지되어 있으면 `GET /s/{token}/result` 한 번으로 촬영·가림·판정·공유 화면을 복원한다. 기존 결과 필드를 유지하면서 아래 정보를 추가했다. POST share 응답에도 같은 형식이 적용된다.
+
+| 필드 | 의미 |
+| --- | --- |
+| title, code | 요청 제목과 이미 발급한 인증코드 |
+| instruction2, mission2 | 이미 공개한 두 번째 지시 문구·구조화된 미션. 공개 전에는 null |
+| expiresAt | 기존 전체 요청 마감 |
+| deadline1, deadline2 | 기존 사진별 촬영 마감. 시작 전인 단계의 마감은 null |
+| serverTime | 응답 생성 시 서버 시각. 클라이언트 시계 차이 보정에 사용 |
+| photos | 접수된 사진별 number, maskStatus, previewPath 목록 |
+
+FIRST_MASKING 단계의 추가 필드 예시:
+
+```json
+{
+  "title":"요청 1",
+  "code":"7K89",
+  "instruction2":null,
+  "mission2":null,
+  "expiresAt":"2026-11-15T12:30:00Z",
+  "deadline1":"2026-11-15T12:03:00Z",
+  "deadline2":null,
+  "serverTime":"2026-11-15T12:02:20Z",
+  "photos":[{"number":1,"maskStatus":"READY","previewPath":"/s/{token}/preview/1"}]
+}
+```
+
+photos에는 접수된 사진만 포함한다. maskStatus는 PENDING/READY/FAILED이며 previewPath는 실제로 미리보기가 허용되는 경우에만 제공한다. 내부 Storage 키·원본·손 인식 입력은 반환하지 않는다. READY라도 현재 단계에서 열 수 없는 사진의 previewPath는 null이다.
+
+| phase | 복원할 화면·다음 동작 |
+| --- | --- |
+| FIRST_CHECKING | 기존 code와 deadline1로 첫 사진 촬영 화면 복원 |
+| FIRST_MASKING | 1번 사진 PENDING이면 POST mask 실행, READY면 previewPath로 가림 편집 복원. FAILED면 가림 실패 안내 및 기존 결과 전용 흐름 사용 |
+| SECOND_WAITING | 저장된 instruction2/mission2와 deadline2로 두 번째 촬영 화면 복원 |
+| JUDGING | judgmentDeadline, pollAfterMillis로 대기 화면 및 결과 조회 복원 |
+| SHARE_WAITING | 두 가림 미리보기와 canShare로 최종 확인·공유 화면 복원 |
+| COMPLETED / FAILED | 결과 화면 표시. 미리보기 편집 경로는 제공하지 않음 |
+
+가로·세로 촬영 마감이 응답에 함께 있더라도 현재 phase에 해당하는 마감만 타이머로 표시한다. 남은 시간은 응답 기준으로 deadline - serverTime을 계산한다. 새로고침 시 POST start나 POST first-mask/confirm을 다시 호출하지 않는다. GET result는 미션·코드·마감·가림 상태를 생성하거나 변경하지 않으며 외부 AI·Storage도 호출하지 않는다.
+
+페이지 진입 시 credentials:include로 GET result를 먼저 확인한다. 200이면 해당 단계로 복구하고, 시작 전 또는 판매자 세션이 없는 경우 403이므로 기존 공개 GET /s/{token}으로 최초 안내 화면 진입 가능 여부를 확인한다. 이 공개 경로는 기존대로 사용 중인 링크를 409로 거절하며 인증코드를 노출하지 않는다.
+
+다른 브라우저·쿠키 삭제·세션 만료 시에는 token만으로 판매자 권한을 복구하지 않는다. 이전 브라우저 세션을 사용할 수 없으면 새 링크로 시작해야 한다. 같은 세션이라도 요청/촬영/분석 마감이 지났으면 기존 실패 상태를 보여주고 시간을 연장하지 않는다. 보관 만료로 요청이 삭제됐으면 404다.
+
+아직 제출하지 않은 사진과 서버에 저장하지 않은 브러시 작업은 복구하지 않는다. 이 변경에는 새 API·DB 컬럼·SQL 적용이 필요 없다.

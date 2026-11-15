@@ -157,3 +157,5 @@ Postman의 multipart Content-Type과 boundary는 자동 설정을 사용한다.
 최종 판정과 공유의 요청·응답, 상태 전이, 오류 및 DB 준비는 [최종 판정·공유 API](trueshot-finalization-api.md)에 정리했다.
 
 사진 제출 및 판매자 결과 조회에 화질·인증코드·미션별 checks와 failReasons를 추가했다. 상태값과 프론트 표시 규칙은 [최종 판정·공유 명세의 판매자 화면 체크 결과](trueshot-finalization-api.md#판매자-화면-체크-결과)를 참고한다.
+
+판매자가 새로고침한 경우 GET /s/{token}/result에서 기존 코드·미션·마감·사진별 가림 상태 및 허용된 미리보기 경로를 받아 화면을 복구한다. [복구 필드와 단계별 동작](trueshot-finalization-api.md#판매자-새로고침재접속-복구)을 참고한다.
