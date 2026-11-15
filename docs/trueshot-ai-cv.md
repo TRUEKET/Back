@@ -13,7 +13,7 @@ AI·CV 담당자와 회원 탈퇴 담당자가 연결할 계약을 정리한 문
 ```
 
 ```json
-{"number":2,"phase":"JUDGING","accepted":true,"deadline":null,"retryReasons":[]}
+{"number":2,"phase":"JUDGING","accepted":true,"deadline":"2026-11-15T12:01:00Z","retryReasons":[]}
 ```
 
 첫 사진 실패는 `accepted:false`, `retryReasons`와 갱신된 `deadline`을 반환한다. 두 번째의 접수 성공은 인증 성공을 뜻하지 않는다. 자세한 재촬영·오류 예시는 [사진 제출](trueshot-api.md#3-사진-제출)을 참고한다.
@@ -112,3 +112,5 @@ CV는 삭제 전에 두 원본을 읽어야 한다. 가린 사진으로 최종 �
 회원 탈퇴 담당자는 `masked_image`, `original_storage_key` 두 컬럼을 모두 수집해야 한다. 인증 실패 정리 스케줄러와 회원 탈퇴는 별도 경로이며, 회원 탈퇴용 백그라운드 삭제 큐가 있는 것은 아니다.
 
 7일 보관 만료의 배치·잠금·부분 실패·탈퇴 동시 실행 계약은 [보관 만료 정리](trueshot-retention.md)에 정리했다.
+
+2차 사진 분석은 기본 10초 주기로 자동 재시도하고 접수 후 최대 기본 60초까지만 기다린다. 마감·권장 조회 간격·분석 시간 초과 코드는 [최종 판정·공유 명세](trueshot-finalization-api.md#판정-대기-시간프론트-로딩-종료)를 참고한다. 원본 삭제 재시도와 보관 만료 정리는 기존 1분 주기를 유지한다.

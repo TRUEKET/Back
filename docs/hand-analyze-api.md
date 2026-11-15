@@ -92,7 +92,7 @@ async function submitSecondPhoto(token: string, capturedPhoto: Blob, recognizer:
 
 accepted는 접수 성공이며 최종 인증 성공 여부와 구분한다. phase는 정상 판정·가림 완료 시 SHARE_WAITING, 불일치 시 FAILED, 가림이 불확실해 결과만 제공하면 COMPLETED, 외부 서비스 일시 장애 시 JUDGING일 수 있다.
 
-`GET /s/{token}/result`로 판매자 결과를 조회한다. 제출 응답에는 해당 사진의 checks·failReasons, 결과 조회에는 두 사진의 checks·failReasons가 포함된다. JUDGING이면 사진을 다시 업로드하지 않고 결과를 조회한다. 서버가 자동 재시도하며 필요한 경우 기존 `POST /s/{token}/judge`로 같은 원본을 재처리할 수 있다. 구매자는 로그인한 소유자 권한으로 `GET /trueshot/{id}`에서 최종 결과와 체크 내용을 확인한다. 내부 분석의 화면·손 좌표와 OCR 원문을 별도 응답으로 직접 반환하지 않는다.
+`GET /s/{token}/result`로 판매자 결과를 조회한다. 제출 응답에는 해당 사진의 checks·failReasons, 결과 조회에는 두 사진의 checks·failReasons가 포함된다. JUDGING이면 사진을 다시 업로드하지 않고 결과를 조회한다. 서버가 같은 원본으로 기본 10초 간격으로 자동 재시도하며, 접수 후 최대 기본 60초를 넘기면 분석 시간 초과로 종료한다. 수동 재시도 API는 제공하지 않는다. 구매자는 로그인한 소유자 권한으로 `GET /trueshot/{id}`에서 최종 결과와 체크 내용을 확인한다. 내부 분석의 화면·손 좌표와 OCR 원문을 별도 응답으로 직접 반환하지 않는다.
 
 ## 미션 비교
 
@@ -107,3 +107,5 @@ accepted는 접수 성공이며 최종 인증 성공 여부와 구분한다. pha
 최종 판정 저장·가림·공유·원본 정리·재시도는 [최종 판정·공유 명세](trueshot-finalization-api.md)를 따른다. 실제 React·모바일 회전·사진 정확도는 실연동에서 검증한다.
 
 참고: [팀 지정 샘플](https://github.com/google-ai-edge/mediapipe-samples-web/blob/main/src/tasks/gesture-recognizer.ts), [공식 Web 가이드](https://developers.google.com/edge/mediapipe/solutions/vision/gesture_recognizer?tab=Web).
+
+JUDGING 동안 GET result의 pollAfterMillis(기본 2000)에 맞춰 조회하고, 다른 phase가 되면 로딩을 종료한다. judgmentDeadline은 판정 마감, failureCode=ANALYSIS_TIMEOUT은 분석 시간 초과다. JUDGING 제출 응답의 deadline에도 판정 마감을 제공한다. [대기 시간 설정과 처리 기준](trueshot-finalization-api.md#판정-대기-시간프론트-로딩-종료)을 참고한다.
