@@ -51,3 +51,11 @@ RP 신고 리스트·조회·등록·이의제기는 신고 담당자, TS 요청
 이번 최신 병합 코드 전체 테스트는 356개 중 27개가 기존 외부 환경 의존으로 실패했다: BackendApplicationTests(1), LookupServiceIntegrationTest(20), ReportServiceIntegrationTest(5)는 test 프로필의 TEST_DB_* PostgreSQL 설정이 없고, IdentifierHashDebugTest(1)는 실제 identifier 308번을 요구한다. 이 네 클래스를 명시적으로 제외한 실행 가능한 회귀 테스트는 통과했다. 테스트 설정이나 팀 DB를 임의로 변경하지 않았으며 전체 테스트 통과로 보고하지 않는다.
 
 #57: 실제 AI·Storage·팀 DB를 사용하는 판독→송금 검증→FRAUD 등록을 직접 수행했다. 계좌 검증은 성공했고 신고 Storage 복사 요청 필드(bucketId) 및 삭제 엔드포인트 오류를 발견·수정했다. 수정 후 200→200→201 확인, DB 계좌·증빙과 실제 파일 확인, 테스트 계정/신고/파일/임시 증빙 정리 완료. 공유 식별자는 보존했다. SMTP와 스케줄러는 껐으며 임시 검증 서버를 종료했다.
+
+## 인증·계정·판독·피드백 Swagger (#60)
+
+- 기존 springdoc 3.0.0 의존성을 재사용하고 `accounts`·`analysis` 정의를 추가했다.
+- 요청 예시, 세션·CSRF 조건, 상태 코드, 이미지 업로드, 피드백 종류와 마스킹 계좌 선택 방식을 문서화했다.
+- 보안 필터가 처리하는 로그아웃도 문서에 포함했다. 시연 HTML은 REST 목록에서 제외했다.
+- 배포 초안과 트루샷 AI·CV 동작은 변경하지 않았다.
+- 검증: 로컬 회귀 337개 통과(별도 PostgreSQL 테스트 DB 의존 기존 4개 클래스·27개 테스트 제외). Swagger UI에서 CSRF 발급 200 및 판독 파일 선택 표시 확인.

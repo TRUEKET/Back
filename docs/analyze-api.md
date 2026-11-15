@@ -1,5 +1,18 @@
 # 캡처 판독 API (Gemini / OpenAI)
 
+## Swagger에서 확인하기
+
+서버 실행 후 `http://localhost:8080/swagger-ui/index.html`을 열고 상단 정의에서 `analysis`를 선택한다.
+OpenAPI JSON은 `/v3/api-docs/analysis`이다. 기존 `all`·`trueshot` 정의도 유지한다.
+
+1. `accounts`의 `GET /auth/csrf` → **Try it out → Execute**로 토큰을 받는다.
+2. 같은 브라우저를 유지하며 변경 요청의 `X-CSRF-TOKEN` 칸에 응답의 `token` 값만 넣는다.
+3. 회원가입·로그인·로그아웃 후 CSRF를 다시 발급한다. 세션 쿠키는 브라우저가 관리하므로 Authorize에 JSESSIONID를 직접 넣지 않는다.
+4. 판독은 `analysis`의 `POST /analyze`에서 `captures` 파일을 선택한다. 여러 장은 **Add string item**으로 추가하고 `additionalInfo`는 필요할 때 입력한다.
+
+요청 예시는 가상 값이다. 오류 응답은 상태 코드와 설명을 확인한다. API별 오류 포맷이 달라 성공 DTO를 오류 스키마로 재사용하지 않는다.
+
+
 AI는 거래 유형·판매자 원문·신호 후보를 추출한다. 단계 결정과 중복 제거는 기존 서버 규칙(`analysis-rules.md`)을 사용한다. 이미지와 추가 정보 안의 지시는 신뢰하지 않는다.
 
 ## 환경변수
