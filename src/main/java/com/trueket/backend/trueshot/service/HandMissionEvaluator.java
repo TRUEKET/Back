@@ -53,6 +53,6 @@ public final class HandMissionEvaluator {
                 : screen == null ? CheckStatus.UNDETERMINED
                 : matches.isEmpty() ? CheckStatus.NOT_MATCHED : CheckStatus.MATCHED;
         return new Output(status, input.imageWidth(), input.imageHeight(), screen, List.copyOf(hands),
-                new MissionCheck(mission, check, List.copyOf(matches)));
+                new MissionCheck(mission, check, List.copyOf(matches)),null);
     }
 }

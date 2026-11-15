@@ -6,6 +6,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Pageable;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -13,6 +14,10 @@ import java.util.List;
 import java.util.Optional;
 
 public interface TrueshotRequestRepository extends JpaRepository<TrueshotRequest, Long> {
+    @Query("select request.id from TrueshotRequest request "
+            + "where request.purgeAt <= :cutoff and request.id > :afterId order by request.id")
+    List<Long> findExpiredIds(OffsetDateTime cutoff, Long afterId, Pageable pageable);
+
     List<TrueshotRequest> findByPhase(TrueshotPhase phase);
     List<TrueshotRequest> findByUserIdOrderByCreatedAtDesc(Long userId);
 

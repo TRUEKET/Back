@@ -36,19 +36,27 @@ public class TrueshotJudgmentService {
     @Transactional(noRollbackFor = ApiException.class)
     public SellerResult judge(String token) {
         var request = requests.findByTokenForUpdate(token).orElseThrow(this::notFound);
-        process(request);
+        processWithDeadline(request);
         return result(request);
     }
 
     @Transactional(noRollbackFor = ApiException.class)
     public void judgeById(Long id) {
         var request = requests.findByIdForUpdate(id).orElse(null);
-        if (request != null && request.getPhase() == TrueshotPhase.JUDGING) process(request);
+        if (request != null && request.getPhase() == TrueshotPhase.JUDGING) processWithDeadline(request);
     }
 
     @Transactional(readOnly = true)
     public SellerResult sellerResult(String token) {
         return result(requests.findByToken(token).orElseThrow(this::notFound));
+    }
+
+    private void processWithDeadline(TrueshotRequest request) {
+        try { process(request); }
+        catch (ApiException e) {
+            if (expire(request)) return;
+            throw e;
+        }
     }
 
     private void process(TrueshotRequest request) {
@@ -62,7 +70,7 @@ public class TrueshotJudgmentService {
         if (expire(request)) return;
         var first = photos.findByRequestIdAndNumber(request.getId(),(short)1).orElseThrow(this::notFound);
         var second = photos.findByRequestIdAndNumber(request.getId(),(short)2).orElseThrow(this::notFound);
-        if (request.getJudgmentResult() == null) {
+        if (request.getJudgmentResult() == null || !request.getJudgmentResult().path("passed").isBoolean()) {
             if (second.getHandAnalysis() == null || request.getMission2() == null) {
                 throw new ApiException(HttpStatus.CONFLICT, "손 인식 결과가 없는 이전 요청입니다. 새 요청으로 진행해 주세요.");
             }
@@ -75,6 +83,7 @@ public class TrueshotJudgmentService {
             var reasons = new ArrayList<String>();
             boolean firstVerified = request.getFirstVerifiedAt() != null;
             if (!firstVerified) reasons.add("첫 번째 사진의 코드·화질 확인이 완료되지 않음");
+            if (Boolean.FALSE.equals(analysis.clear())) reasons.add("두 번째 사진이 흐리거나 예매 화면의 내용을 확인할 수 없음");
             if (analysis.missionCheck().status() != CheckStatus.MATCHED) {
                 reasons.add(switch (analysis.status()) {
                     case NO_HANDS -> "두 번째 사진에서 손을 찾지 못함";
@@ -87,6 +96,7 @@ public class TrueshotJudgmentService {
             var snapshot = json.createObjectNode();
             snapshot.put("firstPhotoVerified", firstVerified);
             snapshot.put("analysisStatus", analysis.status().name());
+            snapshot.put("secondPhotoClear",analysis.clear());
             snapshot.put("passed", reasons.isEmpty());
             snapshot.set("missionCheck",json.valueToTree(analysis.missionCheck()));
             snapshot.set("failReasons",json.valueToTree(reasons));
@@ -101,27 +111,31 @@ public class TrueshotJudgmentService {
                 throw e;
             }
         }
-        if (expire(request)) return;
+        var finishedAt=now();
+        if (expire(request,finishedAt)) return;
         List<String> reasons = new ArrayList<>();
         snapshot.path("failReasons").forEach(reason -> reasons.add(reason.asText()));
         boolean shareable = first.getMaskStatus() == MaskStatus.READY && second.getMaskStatus() == MaskStatus.READY
                 && first.getMaskedImage()!=null && second.getMaskedImage()!=null;
-        request.finishJudgment(passed, shareable, reasons, now());
+        request.finishJudgment(passed, shareable, reasons, finishedAt);
         lifecycle.cleanFinalOriginals(request.getId());
     }
 
     private boolean expire(TrueshotRequest request) {
-        if (!request.isExpired(now())) return false;
-        request.failForRequestTimeout();
+        return expire(request,now());
+    }
+
+    private boolean expire(TrueshotRequest request,OffsetDateTime now) {
+        if (request.isExpired(now)) request.failForRequestTimeout();
+        else if (request.judgmentTimedOut(now)) request.failForJudgmentTimeout(now);
+        else return false;
         lifecycle.cleanFinalOriginals(request.getId());
         return true;
     }
 
     private SellerResult result(TrueshotRequest request) {
         var stored = photos.findByRequestId(request.getId());
-        boolean ready = stored.size() == 2 && stored.stream().allMatch(photo -> photo.getMaskStatus() == MaskStatus.READY
-                && photo.getMaskedImage()!=null);
-        return SellerResult.from(request, now(), ready);
+        return SellerResult.from(request, now(), stored);
     }
     private OffsetDateTime now() { return OffsetDateTime.now(ZoneOffset.UTC); }
     private ApiException notFound() { return new ApiException(HttpStatus.NOT_FOUND,"트루샷 요청 또는 사진을 찾을 수 없어요."); }

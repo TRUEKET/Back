@@ -160,14 +160,22 @@ class TrueshotRequestApiTests {
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accepted").value(false))
-                .andExpect(jsonPath("$.retryReasons[0]").exists());
+                .andExpect(jsonPath("$.retryReasons[0]").exists())
+                .andExpect(jsonPath("$.checks[0].code").value("PHOTO_QUALITY"))
+                .andExpect(jsonPath("$.checks[0].status").value("PASSED"))
+                .andExpect(jsonPath("$.checks[1].code").value("AUTH_CODE"))
+                .andExpect(jsonPath("$.checks[1].status").value("FAILED"))
+                .andExpect(jsonPath("$.failReasons[0]").exists());
         assertEquals(0, jdbc.queryForObject(
                 "select count(*) from trueshot_photos where request_id = ?", Integer.class, id));
         mvc.perform(multipart(path + "/photo").file(photo()).param("n", "1")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accepted").value(true))
-                .andExpect(jsonPath("$.phase").value("FIRST_MASKING"));
+                .andExpect(jsonPath("$.phase").value("FIRST_MASKING"))
+                .andExpect(jsonPath("$.checks[0].status").value("PASSED"))
+                .andExpect(jsonPath("$.checks[1].status").value("PASSED"))
+                .andExpect(jsonPath("$.failReasons").isEmpty());
         assertEquals(1, jdbc.queryForObject(
                 "select count(*) from trueshot_photos where request_id = ?", Integer.class, id));
         verify(originals).upload(anyString(), any(byte[].class), anyString());
@@ -198,7 +206,7 @@ class TrueshotRequestApiTests {
                 "select mission_2_type from trueshot_requests where id=?",String.class,id));
         mvc.perform(get("/trueshot/{id}",id).session(buyer.session()))
                 .andExpect(jsonPath("$.mission2.type").value(mission.get("type").asText()));
-        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"예매"));
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"예매",true));
         String direction=mission.path("position").asText();
         int x=direction.equals("LEFT")?20:direction.equals("RIGHT")?380:200;
         int y=direction.equals("ABOVE")?20:direction.equals("BELOW")?380:200;
@@ -206,11 +214,7 @@ class TrueshotRequestApiTests {
                 +",\"gesture\":\"Victory\",\"confidence\":0.96}]}";
         var analysisPart=new MockMultipartFile("analysis","analysis.json","application/json",
                 analysis.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        mvc.perform(multipart("/hand-analyze").file(photo()).file(analysisPart).param("token",path.substring(3))
-                        .session(seller.session()).header(seller.csrf().getHeaderName(),seller.csrf().getToken()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.missionCheck.status").value("MATCHED"))
-                .andExpect(jsonPath("$.missionCheck.mission.type").value(mission.get("type").asText()));
-        mvc.perform(multipart("/hand-analyze").file(photo()).file(analysisPart).param("token",path.substring(3))
+        mvc.perform(multipart(path+"/photo").file(photo()).file(analysisPart).param("n","2")
                         .session(buyer.session()).header(buyer.csrf().getHeaderName(),buyer.csrf().getToken()))
                 .andExpect(status().isForbidden());
         OffsetDateTime revealed=jdbc.queryForObject("select instruction_2_revealed_at from trueshot_requests where id=?",OffsetDateTime.class,id);
@@ -220,6 +224,9 @@ class TrueshotRequestApiTests {
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        mvc.perform(get("/trueshot/{id}",id).session(buyer.session()))
+                .andExpect(jsonPath("$.judgmentResult.missionCheck.status").value("MATCHED"))
+                .andExpect(jsonPath("$.judgmentResult.missionCheck.mission.type").value(mission.get("type").asText()));
         mvc.perform(multipart(path + "/photo").file(photo()).file(analysisPart).param("n", "2")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isConflict());
@@ -286,6 +293,100 @@ class TrueshotRequestApiTests {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ImageIO.write(image, "jpg", output);
         return new MockMultipartFile("photo", "ticket.jpg", "image/jpeg", output.toByteArray());
+    }
+
+    @Test void sellerRefreshRestoresCodeAndDeadlineOnlyForStartedBrowser() throws Exception {
+        var buyer=buyer();
+        var created=mvc.perform(post("/trueshot").session(buyer.session())
+                .header(buyer.csrf().getHeaderName(),buyer.csrf().getToken())
+                .contentType("application/json").content("{\"title\":\"복구할 인증\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        var data=json.readTree(created.getResponse().getContentAsString());
+        String path=data.get("sellerPath").asText();
+        var seller=anonymous();
+        var started=mvc.perform(post(path+"/start").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken())
+                .contentType("application/json").content("{\"sellerConsented\":true}"))
+                .andExpect(status().isOk()).andReturn();
+        var start=json.readTree(started.getResponse().getContentAsString());
+        for (int i=0;i<2;i++) {
+            var refreshed=mvc.perform(get(path+"/result").session(seller.session()))
+                    .andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store"))
+                    .andExpect(jsonPath("$.title").value("복구할 인증"))
+                    .andExpect(jsonPath("$.code").value(start.get("code").asText()))
+                    .andExpect(jsonPath("$.phase").value("FIRST_CHECKING"))
+                    .andExpect(jsonPath("$.mission2").isEmpty())
+                    .andExpect(jsonPath("$.deadline2").isEmpty())
+                    .andExpect(jsonPath("$.serverTime").isString())
+                    .andExpect(jsonPath("$.photos").isEmpty()).andReturn();
+            var restored=json.readTree(refreshed.getResponse().getContentAsString());
+            assertTrue(OffsetDateTime.parse(start.get("deadline1").asText())
+                    .isEqual(OffsetDateTime.parse(restored.get("deadline1").asText())));
+            assertTrue(OffsetDateTime.parse(start.get("expiresAt").asText())
+                    .isEqual(OffsetDateTime.parse(restored.get("expiresAt").asText())));
+        }
+        mvc.perform(get(path+"/result")).andExpect(status().isForbidden());
+        mvc.perform(get(path+"/result").session(buyer.session())).andExpect(status().isForbidden());
+        mvc.perform(get(path+"/result").session(anonymous().session())).andExpect(status().isForbidden());
+        mvc.perform(get(path)).andExpect(status().isConflict());
+        mvc.perform(post(path+"/start").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken())
+                .contentType("application/json").content("{\"sellerConsented\":true}"))
+                .andExpect(status().isConflict());
+        assertEquals(0,jdbc.queryForObject("select count(*) from trueshot_photos where request_id=?",Integer.class,data.get("id").asLong()));
+    }
+
+    @Test void sellerRefreshRestoresMaskingAndSecondMissionWithoutSideEffects() throws Exception {
+        var buyer=buyer();
+        var created=mvc.perform(post("/trueshot").session(buyer.session())
+                .header(buyer.csrf().getHeaderName(),buyer.csrf().getToken())
+                .contentType("application/json").content("{}"))
+                .andExpect(status().isCreated()).andReturn();
+        var data=json.readTree(created.getResponse().getContentAsString());
+        String path=data.get("sellerPath").asText();
+        var seller=anonymous();
+        mvc.perform(post(path+"/start").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken())
+                .contentType("application/json").content("{\"sellerConsented\":true}"))
+                .andExpect(status().isOk());
+        when(checker.check(anyString(),any())).thenReturn(new TrueshotFirstPhotoChecker.Result(true,true,true));
+        mvc.perform(multipart(path+"/photo").file(photo()).param("n","1").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken())).andExpect(status().isOk());
+        mvc.perform(get(path+"/result").session(seller.session())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("FIRST_MASKING"))
+                .andExpect(jsonPath("$.photos[0].number").value(1))
+                .andExpect(jsonPath("$.photos[0].maskStatus").value("PENDING"))
+                .andExpect(jsonPath("$.photos[0].previewPath").isEmpty());
+        org.mockito.Mockito.verifyNoInteractions(maskDetector,maskStorage);
+        when(maskStorage.original(anyString())).thenReturn(photo().getBytes());
+        when(maskStorage.masked(anyString())).thenReturn(photo().getBytes());
+        when(maskDetector.detect(any())).thenReturn(new TrueshotMaskDetector.Detection(true,List.of(new Box(.1,.1,.1,.1))));
+        mvc.perform(post(path+"/mask").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken())).andExpect(status().isOk());
+        var masking=mvc.perform(get(path+"/result").session(seller.session())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.photos[0].maskStatus").value("READY"))
+                .andExpect(jsonPath("$.photos[0].previewPath").value(path+"/preview/1"))
+                .andExpect(jsonPath("$.photos[0].originalStorageKey").doesNotExist())
+                .andExpect(jsonPath("$.photos[0].maskedImage").doesNotExist()).andReturn();
+        assertTrue(!masking.getResponse().getContentAsString().contains("trueshots/"));
+        mvc.perform(get(path+"/preview/1").session(seller.session())).andExpect(status().isOk());
+        var confirmed=mvc.perform(post(path+"/first-mask/confirm").session(seller.session())
+                .header(seller.csrf().getHeaderName(),seller.csrf().getToken())
+                .contentType("application/json").content("{\"boxes\":[]}"))
+                .andExpect(status().isOk()).andReturn();
+        var instruction=json.readTree(confirmed.getResponse().getContentAsString());
+        for (int i=0;i<2;i++) {
+            var refreshed=mvc.perform(get(path+"/result").session(seller.session())).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.phase").value("SECOND_WAITING"))
+                    .andExpect(jsonPath("$.instruction2").value(instruction.get("instruction2").asText()))
+                    .andExpect(jsonPath("$.photos[0].previewPath").isEmpty()).andReturn();
+            var restored=json.readTree(refreshed.getResponse().getContentAsString());
+            assertEquals(instruction.get("mission2"),restored.get("mission2"));
+            assertTrue(OffsetDateTime.parse(instruction.get("deadline2").asText())
+                    .isEqual(OffsetDateTime.parse(restored.get("deadline2").asText())));
+        }
+        mvc.perform(get(path+"/preview/1").session(seller.session())).andExpect(status().isConflict());
+        verify(maskDetector,org.mockito.Mockito.times(1)).detect(any());
     }
 
     private Browser buyer() throws Exception {

@@ -1,4 +1,3 @@
-
 package com.trueket.backend.global.config;
 
 import com.trueket.backend.analyze.service.AnalysisLogoutHandler;
@@ -48,12 +47,11 @@ public class SecurityConfig {
         // 접근 권한 설정
         http.authorizeHttpRequests(auth -> auth
 
-                // 기존 공개 API + develop의 hand-analyze
+                // 공개 API
                 .requestMatchers(
                         "/auth/**",
                         "/analyze",
                         "/analyze/**",
-                        "/hand-analyze",
                         "/lookup",
                         "/lookup/**",
                         "/s/**",

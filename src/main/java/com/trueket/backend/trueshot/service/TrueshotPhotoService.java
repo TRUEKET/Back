@@ -2,6 +2,7 @@ package com.trueket.backend.trueshot.service;
 
 import com.trueket.backend.global.exception.ApiException;
 import com.trueket.backend.trueshot.dto.TrueshotPhotoResponse;
+import com.trueket.backend.trueshot.dto.TrueshotChecks;
 import com.trueket.backend.trueshot.dto.HandAnalysisDtos.Input;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trueket.backend.trueshot.entity.TrueshotPhoto;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -28,16 +30,20 @@ public class TrueshotPhotoService {
     private final TrueshotOriginalStore originals;
     private final HandAnalysisService hands;
     private final ObjectMapper json = new ObjectMapper();
+    private final java.time.Duration maxJudgmentWait;
 
     public TrueshotPhotoService(TrueshotRequestRepository requests, TrueshotPhotoRepository photos,
             TrueshotImageInput input, TrueshotFirstPhotoChecker firstChecker,
-            TrueshotOriginalStore originals, HandAnalysisService hands) {
+            TrueshotOriginalStore originals, HandAnalysisService hands,
+            @Value("${trueshot.judgment.max-wait:60s}") java.time.Duration maxJudgmentWait) {
         this.requests = requests;
         this.photos = photos;
         this.input = input;
         this.firstChecker = firstChecker;
         this.originals = originals;
         this.hands = hands;
+        if (maxJudgmentWait.isZero() || maxJudgmentWait.isNegative()) throw new IllegalArgumentException("판정 대기 시간은 양수여야 합니다.");
+        this.maxJudgmentWait=maxJudgmentWait;
     }
 
     @Transactional(noRollbackFor = ApiException.class)
@@ -82,8 +88,10 @@ public class TrueshotPhotoService {
         }
         if (!result.passed()) {
             request.firstPhotoRejected(receivedAt, checkedAt);
+            var checks=TrueshotChecks.first(result.clear(),result.codeVisible(),result.codeMatches());
             return new TrueshotPhotoResponse(1, request.getPhase(), false,
-                    request.getDeadline1(), result.retryReasons());
+                    request.getDeadline1(), result.retryReasons(),checks,checks.stream()
+                            .filter(check -> check.status()==TrueshotChecks.Outcome.FAILED).map(TrueshotChecks.Check::message).toList());
         }
         String key = key(request.getId());
         try {
@@ -96,7 +104,8 @@ public class TrueshotPhotoService {
         photo.storeOriginal(key);
         photos.save(photo);
         request.firstPhotoAccepted(checkedAt);
-        return new TrueshotPhotoResponse(1, request.getPhase(), true, null, List.of());
+        return new TrueshotPhotoResponse(1, request.getPhase(), true, null, List.of(),
+                TrueshotChecks.first(true,true,true),List.of());
     }
 
     private TrueshotPhotoResponse uploadSecond(TrueshotRequest request,
@@ -120,8 +129,8 @@ public class TrueshotPhotoService {
         photo.storeOriginal(key);
         photo.storeHandAnalysis(json.valueToTree(analysis));
         photos.save(photo);
-        request.secondPhotoReceived(receivedAt);
-        return new TrueshotPhotoResponse(2, request.getPhase(), true, null, List.of());
+        request.secondPhotoReceived(receivedAt,maxJudgmentWait);
+        return new TrueshotPhotoResponse(2, request.getPhase(), true, request.getJudgmentDeadline(), List.of(),TrueshotChecks.pendingSecond(),List.of());
     }
 
     private String key(Long requestId) {

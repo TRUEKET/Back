@@ -24,12 +24,14 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.time.Duration;
 
 @Entity
 @Table(name = "trueshot_requests")
 @Getter
 @NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
 public class TrueshotRequest {
+    public static final String ANALYSIS_TIMEOUT_REASON="사진 분석이 지연되어 제한 시간 안에 확인하지 못했어요. 새 인증 링크를 요청해 주세요.";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -112,7 +114,42 @@ public class TrueshotRequest {
 
     public void storeJudgment(JsonNode result) {
         if (phase != TrueshotPhase.JUDGING) throw new IllegalStateException("최종 판정 단계가 아닙니다.");
+        var deadline=getJudgmentDeadline();
+        if (deadline!=null) ((com.fasterxml.jackson.databind.node.ObjectNode)result).put("deadline",deadline.toString());
         judgmentResult = result;
+    }
+
+    public OffsetDateTime getJudgmentDeadline() {
+        if (secondReceivedAt==null) return null;
+        if (judgmentResult!=null && judgmentResult.path("deadline").isTextual()) {
+            try {
+                var deadline=OffsetDateTime.parse(judgmentResult.get("deadline").asText());
+                return deadline.isBefore(expiresAt)?deadline:expiresAt;
+            }
+            catch (java.time.format.DateTimeParseException ignored) { /* 이전 기록에는 기본 제한을 적용한다. */ }
+        }
+        var deadline=secondReceivedAt.plusSeconds(60);
+        return deadline.isBefore(expiresAt)?deadline:expiresAt;
+    }
+
+    public boolean judgmentTimedOut(OffsetDateTime now) {
+        return phase==TrueshotPhase.JUDGING && (getJudgmentDeadline()==null || !now.isBefore(getJudgmentDeadline()));
+    }
+
+    public void failForJudgmentTimeout(OffsetDateTime now) {
+        if (phase!=TrueshotPhase.JUDGING) return;
+        var deadline=getJudgmentDeadline();
+        status=TrueshotStatus.FAILED;
+        phase=TrueshotPhase.FAILED;
+        judgedAt=now;
+        failReasons=JsonNodeFactory.instance.arrayNode().add(ANALYSIS_TIMEOUT_REASON);
+        // 가림 대기 중이던 중간 통과 결과를 최종 결과로 오인하지 않도록 교체한다.
+        var result=JsonNodeFactory.instance.objectNode();
+        result.put("passed",false);
+        result.put("failureCode","ANALYSIS_TIMEOUT");
+        result.set("failReasons",failReasons.deepCopy());
+        if (deadline!=null) result.put("deadline",deadline.toString());
+        judgmentResult=result;
     }
 
     public void finishJudgment(boolean passed, boolean shareable, java.util.List<String> reasons, OffsetDateTime now) {
@@ -163,6 +200,12 @@ public class TrueshotRequest {
 
     public boolean canStart() {
         return status == TrueshotStatus.PENDING && phase == TrueshotPhase.WAITING;
+    }
+
+    public boolean canPreviewSellerPhoto(short number,OffsetDateTime now) {
+        if (isExpired(now) || (number!=1 && number!=2)) return false;
+        return (number==1 && phase==TrueshotPhase.FIRST_MASKING)
+                || (status==TrueshotStatus.PASSED && phase==TrueshotPhase.SHARE_WAITING);
     }
 
     public void start(OffsetDateTime now) {
@@ -222,10 +265,14 @@ public class TrueshotRequest {
         phase = TrueshotPhase.FIRST_MASKING;
     }
 
-    public void secondPhotoReceived(OffsetDateTime receivedAt) {
+    public void secondPhotoReceived(OffsetDateTime receivedAt,Duration maxWait) {
         if (phase != TrueshotPhase.SECOND_WAITING) throw new IllegalStateException("두 번째 촬영 단계가 아닙니다.");
+        if (maxWait.isZero() || maxWait.isNegative()) throw new IllegalArgumentException("판정 대기 시간은 양수여야 합니다.");
         secondReceivedAt = receivedAt;
         phase = TrueshotPhase.JUDGING;
+        var deadline=receivedAt.plus(maxWait);
+        if (expiresAt.isBefore(deadline)) deadline=expiresAt;
+        judgmentResult=JsonNodeFactory.instance.objectNode().put("deadline",deadline.toString());
     }
 
     public void revealSecondInstruction(SecondMission mission, OffsetDateTime now) {

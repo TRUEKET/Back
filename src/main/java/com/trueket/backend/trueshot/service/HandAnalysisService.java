@@ -23,10 +23,6 @@ public class HandAnalysisService {
         this.screens = screens;
     }
 
-    public Output analyze(MultipartFile photo, Input input, SecondMission mission) {
-        return analyze(prepare(photo, input), input, mission);
-    }
-
     public TrueshotImageInput.Prepared prepare(MultipartFile photo, Input input) {
         validateHands(input);
         // 모델 입력용 이미지를 축소하기 전에 원본 이미지 크기를 검증한다.
@@ -38,14 +34,14 @@ public class HandAnalysisService {
     public Output analyze(TrueshotImageInput.Prepared prepared, Input input, SecondMission mission) {
         if (input.hands().isEmpty()) return HandMissionEvaluator.evaluate(input, Status.NO_HANDS, null, mission);
         var detection = screens.detect(prepared);
-        if (!detection.found()) return HandMissionEvaluator.evaluate(input, Status.SCREEN_NOT_FOUND, null, mission);
-        if (!detection.certain()) return HandMissionEvaluator.evaluate(input, Status.SCREEN_UNCERTAIN, null, mission);
+        if (!detection.found()) return HandMissionEvaluator.evaluate(input, Status.SCREEN_NOT_FOUND, null, mission).withQuality(detection.clear());
+        if (!detection.certain()) return HandMissionEvaluator.evaluate(input, Status.SCREEN_UNCERTAIN, null, mission).withQuality(detection.clear());
         if (!detection.validBounds()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "예매 화면 좌표를 확인하지 못했어요. 다시 시도해 주세요.");
         }
         var screen = new Screen(detection.x() * input.imageWidth(), detection.y() * input.imageHeight(),
                 detection.width() * input.imageWidth(), detection.height() * input.imageHeight(), detection.text());
-        return HandMissionEvaluator.evaluate(input, Status.ANALYZED, screen, mission);
+        return HandMissionEvaluator.evaluate(input, Status.ANALYZED, screen, mission).withQuality(detection.clear());
     }
 
     private void validateHands(Input input) {

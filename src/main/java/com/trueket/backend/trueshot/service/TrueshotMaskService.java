@@ -72,9 +72,12 @@ public class TrueshotMaskService {
     @Transactional(readOnly=true)
     public byte[] preview(String token,short number) {
         TrueshotRequest request=requests.findByToken(token).orElseThrow(this::notFound);
-        if (number==1 && request.getPhase()==TrueshotPhase.FIRST_MASKING) requireMasking(request);
-        else requireSharing(request);
         if (number!=1 && number!=2) throw notFound();
+        var now=OffsetDateTime.now(ZoneOffset.UTC);
+        if (request.isExpired(now)) throw new ApiException(HttpStatus.GONE,"사진 확인 시간이 지났어요.");
+        if (!request.canPreviewSellerPhoto(number,now)) {
+            throw new ApiException(HttpStatus.CONFLICT,"가린 사진을 확인할 수 없는 단계예요.");
+        }
         var photo=photos.findByRequestIdAndNumber(request.getId(),number).orElseThrow(this::notFound);
         if (photo.getMaskStatus()!=MaskStatus.READY || photo.getMaskedImage()==null) throw notFound();
         return storage.masked(photo.getMaskedImage());

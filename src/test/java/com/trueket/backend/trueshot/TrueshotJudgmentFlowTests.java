@@ -45,6 +45,7 @@ class TrueshotJudgmentFlowTests {
     @Autowired TrueshotPhotoRepository photos;
     @Autowired JdbcTemplate jdbc;
     @Autowired TrueshotExpiryJob expiry;
+    @Autowired TrueshotJudgmentService judgments;
     @MockitoBean TrueshotOriginalStore originals;
     @MockitoBean TrueshotMaskStorage storage;
     @MockitoBean TrueshotMaskDetector masks;
@@ -59,7 +60,7 @@ class TrueshotJudgmentFlowTests {
         image=output.toByteArray();
         when(storage.original(anyString())).thenReturn(image);
         when(storage.masked(anyString())).thenReturn(image);
-        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"원문은 저장하지 않음"));
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"원문은 저장하지 않음",true));
         when(masks.detect(any())).thenReturn(new TrueshotMaskDetector.Detection(true,List.of(new Box(.1,.1,.1,.1))));
     }
 
@@ -72,7 +73,16 @@ class TrueshotJudgmentFlowTests {
         assertFalse(saved.getJudgmentResult().toString().contains("원문"));
         assertTrue(photos.findByRequestId(f.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()==null));
         mvc.perform(get(f.path()+"/result").session(f.seller().session())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.canShare").value(true)).andExpect(jsonPath("$.judgmentResult").doesNotExist());
+                .andExpect(jsonPath("$.canShare").value(true)).andExpect(jsonPath("$.judgmentResult").doesNotExist())
+                .andExpect(jsonPath("$.checks.length()").value(4))
+                .andExpect(jsonPath("$.checks[0].status").value("PASSED"))
+                .andExpect(jsonPath("$.checks[1].status").value("PASSED"))
+                .andExpect(jsonPath("$.checks[2].status").value("PASSED"))
+                .andExpect(jsonPath("$.checks[3].status").value("PASSED"))
+                .andExpect(jsonPath("$.failReasons").isEmpty())
+                .andExpect(jsonPath("$.photos.length()").value(2))
+                .andExpect(jsonPath("$.photos[0].previewPath").value(f.path()+"/preview/1"))
+                .andExpect(jsonPath("$.photos[1].previewPath").value(f.path()+"/preview/2"));
         buyerDetail(f).andExpect(jsonPath("$.photos").isEmpty()).andExpect(jsonPath("$.judgmentResult.passed").value(true));
         buyerPhoto(f,1,f.buyer()).andExpect(status().isNotFound());
         mvc.perform(get(f.path()+"/preview/2").session(f.seller().session())).andExpect(status().isOk());
@@ -86,6 +96,10 @@ class TrueshotJudgmentFlowTests {
         buyerPhoto(f,2,buyer()).andExpect(status().isNotFound());
         mvc.perform(get("/trueshot/"+f.id()+"/photos/1")).andExpect(status().isUnauthorized());
         share(f,true,"[]").andExpect(status().isOk());
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(jsonPath("$.phase").value("COMPLETED"))
+                .andExpect(jsonPath("$.photos[0].previewPath").isEmpty())
+                .andExpect(jsonPath("$.photos[1].previewPath").isEmpty());
         assertTrue(sharedAt.isEqual(requests.findById(f.id()).orElseThrow().getPhotosSharedAt()));
         verify(screens,times(1)).detect(any());
         submit(f,analysis(true)).andExpect(status().isConflict());
@@ -97,7 +111,7 @@ class TrueshotJudgmentFlowTests {
         buyerDetail(f).andExpect(jsonPath("$.status").value("FAILED"))
                 .andExpect(jsonPath("$.failReasons[0]").exists()).andExpect(jsonPath("$.photos").isEmpty());
         mvc.perform(get(f.path()+"/result").session(f.seller().session())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.failReasons").doesNotExist()).andExpect(jsonPath("$.canShare").value(false));
+                .andExpect(jsonPath("$.failReasons[0]").exists()).andExpect(jsonPath("$.canShare").value(false));
         share(f,true,"[]").andExpect(status().isConflict());
         assertNotNull(requests.findById(f.id()).orElseThrow().getJudgedAt());
         verify(masks,never()).detect(any());
@@ -107,12 +121,26 @@ class TrueshotJudgmentFlowTests {
         var f=fixture(true);
         when(screens.detect(any())).thenThrow(unavailable());
         submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"));
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(jsonPath("$.checks[2].status").value("PENDING"))
+                .andExpect(jsonPath("$.checks[3].status").value("PENDING"))
+                .andExpect(jsonPath("$.failReasons").isEmpty())
+                .andExpect(jsonPath("$.code").value("AB12"))
+                .andExpect(jsonPath("$.mission2.type").value("GESTURE_POSITION"))
+                .andExpect(jsonPath("$.deadline2").isString())
+                .andExpect(jsonPath("$.photos[0].maskStatus").value("READY"))
+                .andExpect(jsonPath("$.photos[1].maskStatus").value("PENDING"))
+                .andExpect(jsonPath("$.photos[0].previewPath").isEmpty())
+                .andExpect(jsonPath("$.photos[1].previewPath").isEmpty());
         assertNotNull(photos.findByRequestIdAndNumber(f.id(),(short)2).orElseThrow().getHandAnalysis());
         assertNull(requests.findById(f.id()).orElseThrow().getJudgedAt());
-        postSeller(f,"/judge",null).andExpect(status().isServiceUnavailable());
-        doReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"")).when(screens).detect(any());
-        postSeller(f,"/judge",null).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PASSED"));
-        postSeller(f,"/judge",null).andExpect(status().isOk());
+        expiry.retryJudgments();
+        assertNull(requests.findById(f.id()).orElseThrow().getJudgedAt());
+        doReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"",true)).when(screens).detect(any());
+        expiry.retryJudgments();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PASSED"));
+        expiry.retryJudgments();
         verify(originals,times(1)).upload(anyString(),any(),anyString());
         assertEquals(2,photos.findByRequestId(f.id()).size());
     }
@@ -123,8 +151,64 @@ class TrueshotJudgmentFlowTests {
         submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"));
         assertNotNull(requests.findById(f.id()).orElseThrow().getJudgmentResult());
         doReturn(new TrueshotMaskDetector.Detection(true,List.of(new Box(.1,.1,.1,.1)))).when(masks).detect(any());
-        postSeller(f,"/judge",null).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        expiry.retryJudgments();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
         verify(screens,times(1)).detect(any());
+    }
+
+    @Test void judgmentWaitExpiresForPollingAndWorkerWithoutAnotherModelCall() throws Exception {
+        var f=fixture(true);
+        when(screens.detect(any())).thenThrow(unavailable());
+        submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"))
+                .andExpect(jsonPath("$.deadline").isString());
+        var request=requests.findById(f.id()).orElseThrow();
+        assertEquals(60,java.time.Duration.between(request.getSecondReceivedAt(),request.getJudgmentDeadline()).getSeconds());
+        expireJudgmentDeadline(f);
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.failureCode").value("ANALYSIS_TIMEOUT"))
+                .andExpect(jsonPath("$.pollAfterMillis").isEmpty());
+        buyerDetail(f).andExpect(jsonPath("$.status").value("FAILED"));
+        expiry.retryJudgments();
+        var failed=requests.findById(f.id()).orElseThrow();
+        assertEquals("FAILED",failed.getStatus().name());
+        assertNotNull(failed.getJudgedAt());
+        assertFalse(failed.getJudgmentResult().path("passed").asBoolean());
+        assertTrue(photos.findByRequestId(f.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()==null));
+        verify(screens,times(1)).detect(any());
+    }
+
+    @Test void maskingOutageCannotKeepProvisionalPassPastDeadline() throws Exception {
+        var f=fixture(true);
+        when(masks.detect(any())).thenThrow(unavailable());
+        submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"));
+        assertTrue(requests.findById(f.id()).orElseThrow().getJudgmentResult().path("passed").asBoolean());
+        expireJudgmentDeadline(f);
+        expiry.retryJudgments();
+        var failed=requests.findById(f.id()).orElseThrow();
+        assertEquals("FAILED",failed.getStatus().name());
+        assertFalse(failed.getJudgmentResult().path("passed").asBoolean());
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(jsonPath("$.failureCode").value("ANALYSIS_TIMEOUT"))
+                .andExpect(jsonPath("$.checks[2].status").value("NOT_CHECKED"));
+        verify(screens,times(1)).detect(any());
+        verify(masks,times(1)).detect(any());
+    }
+
+    @Test void lateModelSuccessOrErrorReturnsTimeoutInsteadOfAnotherLoadingResponse() throws Exception {
+        for (boolean modelError:List.of(false,true)) {
+            var f=fixture(true);
+            doAnswer(call -> {
+                // 현재 판정 트랜잭션이 가진 마감 시각을 지나도록 만들어 늦게 도착한 응답을 검증한다.
+                expireJudgmentDeadline(f);
+                if (modelError) throw unavailable();
+                return new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"",true);
+            }).when(screens).detect(any());
+            submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("FAILED"))
+                    .andExpect(jsonPath("$.failReasons[0]").exists());
+            assertEquals("ANALYSIS_TIMEOUT",requests.findById(f.id()).orElseThrow().getJudgmentResult().path("failureCode").asText());
+        }
     }
 
     @Test void incompleteMaskAllowsResultOnlyAndNeverExposesOriginal() throws Exception {
@@ -137,6 +221,24 @@ class TrueshotJudgmentFlowTests {
         buyerPhoto(f,1,f.buyer()).andExpect(status().isNotFound());
         buyerPhoto(f,2,f.buyer()).andExpect(status().isNotFound());
         assertTrue(photos.findByRequestId(f.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()==null));
+    }
+
+    @Test void blurrySecondPhotoFailsEvenWhenMissionMatchesAndChecksSurviveReload() throws Exception {
+        var f=fixture(true);
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"",false));
+        submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("FAILED"))
+                .andExpect(jsonPath("$.checks[0].photoNumber").value(2))
+                .andExpect(jsonPath("$.checks[0].status").value("FAILED"))
+                .andExpect(jsonPath("$.checks[1].status").value("PASSED"))
+                .andExpect(jsonPath("$.failReasons[0]").exists());
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.checks[0].status").value("PASSED"))
+                .andExpect(jsonPath("$.checks[1].status").value("PASSED"))
+                .andExpect(jsonPath("$.checks[2].status").value("FAILED"))
+                .andExpect(jsonPath("$.checks[3].status").value("PASSED"));
+        assertFalse(requests.findById(f.id()).orElseThrow().getJudgmentResult().path("secondPhotoClear").asBoolean());
+        verify(masks,never()).detect(any());
     }
 
     @Test void originalDeletionFailureKeepsResultAndKeysForScheduledRetry() throws Exception {
@@ -170,26 +272,74 @@ class TrueshotJudgmentFlowTests {
         var f=fixture(true);
         mvc.perform(multipart(f.path()+"/photo").file(photo()).param("n","2").session(f.seller().session())
                 .header(f.seller().csrf().getHeaderName(),f.seller().csrf().getToken())).andExpect(status().isBadRequest());
-        submit(f,analysis(true).replace("imageWidth\":400","imageWidth\":500")).andExpect(status().isBadRequest());
+        for (String data:List.of(analysis(true).replace("imageWidth\":400","imageWidth\":500"),
+                analysis(true).replace("\"x\":20","\"x\":-1"),analysis(true).replace("\"x\":20","\"x\":401"),
+                analysis(true).replace("\"y\":200","\"y\":401"),analysis(true).replace("0.96","1.1"),
+                analysis(true).replace("Victory","V"),analysis(true).replace(",\"confidence\":0.96",""),
+                "{\"imageWidth\":400,\"imageHeight\":400,\"hands\":null}",
+                "{\"imageWidth\":400,\"imageHeight\":400,\"hands\":[null]}")) {
+            submit(f,data).andExpect(status().isBadRequest());
+        }
         assertFalse(photos.existsByRequestIdAndNumber(f.id(),(short)2));
-        mvc.perform(post(f.path()+"/judge").session(f.buyer().session())
-                .header(f.buyer().csrf().getHeaderName(),f.buyer().csrf().getToken())).andExpect(status().isForbidden());
+        mvc.perform(get(f.path()+"/result").session(f.buyer().session())).andExpect(status().isForbidden());
         mvc.perform(post(f.path()+"/share").session(f.seller().session()).contentType("application/json")
                 .content("{\"sharePhotos\":true,\"boxes\":[]}")).andExpect(status().isForbidden());
+        mvc.perform(multipart(f.path()+"/photo").file(photo()).param("n","2")
+                .file(new MockMultipartFile("analysis","analysis.json","application/json",analysis(true).getBytes(StandardCharsets.UTF_8)))
+                .session(f.seller().session())).andExpect(status().isForbidden());
+    }
+
+    @Test void submissionRejectsExifOversizeAndUnreadablePhotosBeforeSavingOrAnalyzing() throws Exception {
+        var f=fixture(true);
+        var jpegExif=new ByteArrayOutputStream();
+        jpegExif.write(image,0,2);
+        jpegExif.write(new byte[]{(byte)255,(byte)225,0,8,'E','x','i','f',0,0});
+        jpegExif.write(image,2,image.length-2);
+        submit(f,jpegExif.toByteArray(),analysis(true)).andExpect(status().isBadRequest());
+        var pngOutput=new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(400,400,BufferedImage.TYPE_INT_RGB),"png",pngOutput);
+        byte[] png=pngOutput.toByteArray();
+        var pngExif=new ByteArrayOutputStream();
+        pngExif.write(png,0,33);
+        var chunk=new java.io.DataOutputStream(pngExif);
+        byte[] typeAndPayload={'e','X','I','f','I','I',42,0,8,0,0,0};
+        chunk.writeInt(8); chunk.write(typeAndPayload);
+        var crc=new java.util.zip.CRC32(); crc.update(typeAndPayload); chunk.writeInt((int)crc.getValue());
+        pngExif.write(png,33,png.length-33);
+        submit(f,pngExif.toByteArray(),analysis(true)).andExpect(status().isBadRequest());
+        submit(f,new byte[TrueshotImageInput.MAX_BYTES+1],analysis(true)).andExpect(status().isPayloadTooLarge());
+        submit(f,new byte[]{1,2,3},analysis(true)).andExpect(status().isBadRequest());
+        assertFalse(photos.existsByRequestIdAndNumber(f.id(),(short)2));
+        verifyNoInteractions(screens,originals);
+    }
+
+    @Test void standaloneHandAnalysisRouteHasBeenRemoved() throws Exception {
+        var buyer=buyer();
+        mvc.perform(post("/hand-analyze").session(buyer.session())
+                .header(buyer.csrf().getHeaderName(),buyer.csrf().getToken())).andExpect(status().isNotFound());
+    }
+
+    @Test void manualJudgmentRouteHasBeenRemovedWithoutConsumingSubmission() throws Exception {
+        var f=fixture(true);
+        postSeller(f,"/judge",null).andExpect(status().isNotFound());
+        assertEquals("SECOND_WAITING",requests.findById(f.id()).orElseThrow().getPhase().name());
+        assertFalse(photos.existsByRequestIdAndNumber(f.id(),(short)2));
     }
 
     @Test void noHandsOrUncertainScreenNeverPassesAndFailedDeletionCanBeRetried() throws Exception {
         var noHands=fixture(true);
         doThrow(unavailable()).when(deletion).deleteAll(anyList());
         submit(noHands,"{\"imageWidth\":400,\"imageHeight\":400,\"hands\":[]}")
-                .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("FAILED"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("FAILED"))
+                .andExpect(jsonPath("$.checks[0].status").value("NOT_CHECKED"))
+                .andExpect(jsonPath("$.checks[1].status").value("FAILED"));
         buyerDetail(noHands).andExpect(jsonPath("$.judgmentResult.analysisStatus").value("NO_HANDS"));
         assertTrue(photos.findByRequestId(noHands.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()!=null));
         doNothing().when(deletion).deleteAll(anyList());
         expiry.expireRequests();
         assertTrue(photos.findByRequestId(noHands.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()==null));
         var uncertain=fixture(true);
-        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,false,.3,.3,.4,.4,""));
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,false,.3,.3,.4,.4,"",true));
         submit(uncertain,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("FAILED"));
         buyerDetail(uncertain).andExpect(jsonPath("$.judgmentResult.missionCheck.status").value("UNDETERMINED"));
     }
@@ -202,7 +352,9 @@ class TrueshotJudgmentFlowTests {
         when(screens.detect(any())).thenThrow(unavailable());
         submit(expired,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"));
         jdbc.update("update trueshot_requests set expires_at=? where id=?",OffsetDateTime.now().minusSeconds(1),expired.id());
-        postSeller(expired,"/judge",null).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"));
+        expiry.expireRequests();
+        mvc.perform(get(expired.path()+"/result").session(expired.seller().session())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"));
         assertTrue(photos.findByRequestId(expired.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()==null));
     }
 
@@ -225,19 +377,20 @@ class TrueshotJudgmentFlowTests {
         var f=fixture(true);
         when(screens.detect(any())).thenThrow(unavailable());
         submit(f,analysis(true)).andExpect(status().isOk());
-        doReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"")).when(screens).detect(any());
+        doReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"",true)).when(screens).detect(any());
         var pool=java.util.concurrent.Executors.newFixedThreadPool(2);
         var start=new java.util.concurrent.CountDownLatch(1);
         try {
-            java.util.concurrent.Callable<Integer> retry=() -> {
+            java.util.concurrent.Callable<Void> retry=() -> {
                 start.await();
-                return postSeller(f,"/judge",null).andReturn().getResponse().getStatus();
+                judgments.judgeById(f.id());
+                return null;
             };
             var one=pool.submit(retry);
             var two=pool.submit(retry);
             start.countDown();
-            assertEquals(200,one.get(15,java.util.concurrent.TimeUnit.SECONDS));
-            assertEquals(200,two.get(15,java.util.concurrent.TimeUnit.SECONDS));
+            one.get(15,java.util.concurrent.TimeUnit.SECONDS);
+            two.get(15,java.util.concurrent.TimeUnit.SECONDS);
         } finally { pool.shutdownNow(); }
         verify(screens,times(2)).detect(any());
         assertEquals("PASSED",requests.findById(f.id()).orElseThrow().getStatus().name());
@@ -266,9 +419,19 @@ class TrueshotJudgmentFlowTests {
         return "{\"imageWidth\":400,\"imageHeight\":400,\"hands\":[{\"x\":20,\"y\":200,\"gesture\":\""
                 +(match?"Victory":"Open_Palm")+"\",\"confidence\":0.96}]}";
     }
+    private void expireJudgmentDeadline(Fixture f) {
+        var request=requests.findById(f.id()).orElseThrow();
+        ((com.fasterxml.jackson.databind.node.ObjectNode)request.getJudgmentResult())
+                .put("deadline",OffsetDateTime.now().minusSeconds(1).toString());
+        requests.save(request);
+    }
     private MockMultipartFile photo() { return new MockMultipartFile("photo","photo.jpg","image/jpeg",image); }
     private ResultActions submit(Fixture f,String data) throws Exception {
-        return mvc.perform(multipart(f.path()+"/photo").file(photo()).file(new MockMultipartFile("analysis","analysis.json",
+        return submit(f,image,data);
+    }
+    private ResultActions submit(Fixture f,byte[] bytes,String data) throws Exception {
+        return mvc.perform(multipart(f.path()+"/photo").file(new MockMultipartFile("photo","photo.jpg","image/jpeg",bytes))
+                .file(new MockMultipartFile("analysis","analysis.json",
                 "application/json",data.getBytes(StandardCharsets.UTF_8))).param("n","2").session(f.seller().session())
                 .header(f.seller().csrf().getHeaderName(),f.seller().csrf().getToken()));
     }

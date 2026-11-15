@@ -23,5 +23,9 @@ public final class HandAnalysisDtos {
                              VerticalPosition verticalPosition, Boolean nearScreen, Boolean missionMatched) {}
     public record MissionCheck(SecondMission mission, CheckStatus status, List<Integer> matchedHandIndexes) {}
     public record Output(Status status, int imageWidth, int imageHeight, Screen screen,
-                         List<HandResult> hands, MissionCheck missionCheck) {}
+                         List<HandResult> hands, MissionCheck missionCheck, Boolean clear) {
+        public Output withQuality(boolean clear) {
+            return new Output(status,imageWidth,imageHeight,screen,hands,missionCheck,clear);
+        }
+    }
 }
