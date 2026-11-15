@@ -37,7 +37,7 @@ public final class TrueshotDtos {
 
     public record RequestDetail(
             Long id, String title, String code, String sellerPath,
-            TrueshotStatus status, TrueshotPhase phase, String instruction2,
+            TrueshotStatus status, TrueshotPhase phase, String instruction2, SecondMission mission2,
             OffsetDateTime createdAt, OffsetDateTime expiresAt, OffsetDateTime startedAt,
             OffsetDateTime deadline1, OffsetDateTime deadline2, OffsetDateTime photosSharedAt,
             List<String> failReasons
@@ -52,7 +52,7 @@ public final class TrueshotDtos {
             return new RequestDetail(request.getId(), request.getTitle(), request.getCode(),
                     "/s/" + request.getToken(),
                     effectiveStatus(request, now), effectivePhase(request, now),
-                    request.getInstruction2(),
+                    request.getInstruction2(), request.getMission2(),
                     request.getCreatedAt(), request.getExpiresAt(), request.getStartedAt(),
                     request.getDeadline1(), request.getDeadline2(), request.getPhotosSharedAt(), reasons);
         }

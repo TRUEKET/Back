@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.trueket.backend.trueshot.entity.enums.TrueshotPhase;
 import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
 import com.trueket.backend.user.entity.User;
+import com.trueket.backend.trueshot.dto.SecondMission;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -57,6 +58,18 @@ public class TrueshotRequest {
 
     @Column(name = "instruction_2")
     private String instruction2;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mission_2_type")
+    private SecondMission.Type mission2Type;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mission_2_position")
+    private SecondMission.Direction mission2Position;
+
+    public SecondMission getMission2() {
+        return mission2Type == null ? null : SecondMission.of(mission2Type, mission2Position);
+    }
 
     @Column(name = "deadline_1")
     private OffsetDateTime deadline1;
@@ -188,9 +201,11 @@ public class TrueshotRequest {
         phase = TrueshotPhase.JUDGING;
     }
 
-    public void revealSecondInstruction(String instruction, OffsetDateTime now) {
+    public void revealSecondInstruction(SecondMission mission, OffsetDateTime now) {
         if (phase != TrueshotPhase.FIRST_MASKING || isExpired(now)) throw new IllegalStateException("두 번째 지시를 공개할 수 없습니다.");
-        instruction2=instruction;
+        mission2Type=mission.type();
+        mission2Position=mission.position();
+        instruction2=mission.instruction();
         instruction2RevealedAt=now;
         deadline2=now.plusMinutes(1);
         phase=TrueshotPhase.SECOND_WAITING;
