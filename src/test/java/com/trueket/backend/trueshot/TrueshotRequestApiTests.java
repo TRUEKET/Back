@@ -230,6 +230,40 @@ class TrueshotRequestApiTests {
         mvc.perform(multipart(path + "/photo").file(photo()).file(analysisPart).param("n", "2")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isConflict());
+
+        mvc.perform(get(path + "/result").session(seller.session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.canShare").value(true));
+        // 두 번째 사진은 최종 판정 중 자동 가림된다. /mask 재호출은 단계 오류다.
+        mvc.perform(post(path + "/mask").session(seller.session())
+                        .header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
+                .andExpect(status().isConflict());
+        mvc.perform(get(path + "/preview/2").session(seller.session()))
+                .andExpect(status().isOk()).andExpect(content().contentType("image/jpeg"));
+        mvc.perform(get("/trueshot/{id}/photos/1", id).session(buyer.session()))
+                .andExpect(status().isNotFound());
+        mvc.perform(post(path + "/share").session(seller.session())
+                        .header(seller.csrf().getHeaderName(), seller.csrf().getToken())
+                        .contentType("application/json").content("{\"sharePhotos\":true,\"boxes\":[]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("COMPLETED"));
+        mvc.perform(get("/trueshot/{id}", id).session(buyer.session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.photos.length()").value(2));
+        for (int number : List.of(1, 2)) {
+            mvc.perform(get("/trueshot/{id}/photos/{number}", id, number).session(buyer.session()))
+                    .andExpect(status().isOk()).andExpect(content().contentType("image/jpeg"));
+        }
+    }
+
+    @Test
+    void malformedMultipartRequestsAreClientErrors() throws Exception {
+        Browser seller = anonymous();
+        mvc.perform(multipart("/s/unknown/photo").param("n", "1")
+                        .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
+                .andExpect(status().isBadRequest());
+        mvc.perform(multipart("/s/unknown/photo").file(photo())
+                        .file(new MockMultipartFile("analysis", "analysis.json", "text/plain", "{}".getBytes()))
+                        .param("n", "2").session(seller.session())
+                        .header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
+                .andExpect(status().isUnsupportedMediaType());
     }
 
     @Test
