@@ -11,7 +11,7 @@ public class SecurityConfig {
             com.trueket.backend.analyze.service.AnalysisLogoutHandler analysisLogout) throws Exception {
         http.addFilterBefore(new ActiveUserFilter(users), org.springframework.security.web.access.intercept.AuthorizationFilter.class);
         http.authorizeHttpRequests(auth -> auth
-            .requestMatchers("/auth/**", "/analyze", "/analyze/**", "/hand-analyze", "/lookup", "/lookup/**", "/s/**", "/error").permitAll()
+            .requestMatchers("/auth/**", "/analyze", "/analyze/**", "/lookup", "/lookup/**", "/s/**", "/error").permitAll()
             .anyRequest().authenticated());
         http.exceptionHandling(errors -> errors
             .authenticationEntryPoint((req, res, e) -> res.sendError(401))

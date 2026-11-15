@@ -23,10 +23,6 @@ public class HandAnalysisService {
         this.screens = screens;
     }
 
-    public Output analyze(MultipartFile photo, Input input, SecondMission mission) {
-        return analyze(prepare(photo, input), input, mission);
-    }
-
     public TrueshotImageInput.Prepared prepare(MultipartFile photo, Input input) {
         validateHands(input);
         // 모델 입력용 이미지를 축소하기 전에 원본 이미지 크기를 검증한다.

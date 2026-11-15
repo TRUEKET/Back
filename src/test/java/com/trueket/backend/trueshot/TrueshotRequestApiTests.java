@@ -206,11 +206,7 @@ class TrueshotRequestApiTests {
                 +",\"gesture\":\"Victory\",\"confidence\":0.96}]}";
         var analysisPart=new MockMultipartFile("analysis","analysis.json","application/json",
                 analysis.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        mvc.perform(multipart("/hand-analyze").file(photo()).file(analysisPart).param("token",path.substring(3))
-                        .session(seller.session()).header(seller.csrf().getHeaderName(),seller.csrf().getToken()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.missionCheck.status").value("MATCHED"))
-                .andExpect(jsonPath("$.missionCheck.mission.type").value(mission.get("type").asText()));
-        mvc.perform(multipart("/hand-analyze").file(photo()).file(analysisPart).param("token",path.substring(3))
+        mvc.perform(multipart(path+"/photo").file(photo()).file(analysisPart).param("n","2")
                         .session(buyer.session()).header(buyer.csrf().getHeaderName(),buyer.csrf().getToken()))
                 .andExpect(status().isForbidden());
         OffsetDateTime revealed=jdbc.queryForObject("select instruction_2_revealed_at from trueshot_requests where id=?",OffsetDateTime.class,id);
@@ -220,6 +216,9 @@ class TrueshotRequestApiTests {
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        mvc.perform(get("/trueshot/{id}",id).session(buyer.session()))
+                .andExpect(jsonPath("$.judgmentResult.missionCheck.status").value("MATCHED"))
+                .andExpect(jsonPath("$.judgmentResult.missionCheck.mission.type").value(mission.get("type").asText()));
         mvc.perform(multipart(path + "/photo").file(photo()).file(analysisPart).param("n", "2")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isConflict());

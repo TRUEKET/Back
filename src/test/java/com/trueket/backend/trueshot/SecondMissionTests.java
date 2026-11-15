@@ -1,16 +1,12 @@
 package com.trueket.backend.trueshot;
 
-import com.trueket.backend.global.exception.ApiException;
 import com.trueket.backend.trueshot.dto.SecondMission;
 import com.trueket.backend.trueshot.dto.SecondMission.*;
 import com.trueket.backend.trueshot.entity.TrueshotRequest;
-import com.trueket.backend.trueshot.repository.TrueshotRequestRepository;
 import com.trueket.backend.trueshot.service.SecondMissionService;
 import org.junit.jupiter.api.Test;
 import java.time.OffsetDateTime;
-import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 class SecondMissionTests {
     @Test void allMissionInstructionsAndParametersAreConsistent() {
@@ -26,7 +22,7 @@ class SecondMissionTests {
     }
 
     @Test void generationUsesOnlyConfirmedMissionTypesAndVictory() {
-        var service=new SecondMissionService(mock(TrueshotRequestRepository.class));
+        var service=new SecondMissionService();
         for (int i=0;i<30;i++) {
             var mission=service.generate();
             assertEquals(mission,SecondMission.of(mission.type(),mission.position()));
@@ -34,26 +30,17 @@ class SecondMissionTests {
         }
     }
 
-    @Test void currentMissionUsesPersistedValueAndRejectsExpiredOrWrongStage() {
-        var repository=mock(TrueshotRequestRepository.class);
-        var service=new SecondMissionService(repository);
+    @Test void revealedMissionStoresTypePositionAndInstruction() {
         var now=OffsetDateTime.now();
         var request=TrueshotRequest.create(null,"title","AB12","token",now);
-        when(repository.findByToken("token")).thenReturn(Optional.of(request));
-        assertThrows(ApiException.class,()->service.current("token"));
         request.start(now);
         request.firstPhotoAccepted(now);
         var mission=SecondMission.of(Type.GESTURE_POSITION,Direction.ABOVE);
         request.revealSecondInstruction(mission,now);
-        assertEquals(mission,service.current("token"));
+        assertEquals(mission,request.getMission2());
         assertEquals(mission.instruction(),request.getInstruction2());
-        request.secondPhotoReceived(now);
-        assertThrows(ApiException.class,()->service.current("token"));
-        var expired=TrueshotRequest.create(null,"title","AB12","token",now.minusMinutes(3));
-        expired.start(now.minusMinutes(3));
-        expired.firstPhotoAccepted(now.minusMinutes(2));
-        expired.revealSecondInstruction(mission,now.minusMinutes(2));
-        when(repository.findByToken("token")).thenReturn(Optional.of(expired));
-        assertThrows(ApiException.class,()->service.current("token"));
+        assertEquals(Type.GESTURE_POSITION,request.getMission2Type());
+        assertEquals(Direction.ABOVE,request.getMission2Position());
+        assertEquals(now.plusMinutes(1),request.getDeadline2());
     }
 }

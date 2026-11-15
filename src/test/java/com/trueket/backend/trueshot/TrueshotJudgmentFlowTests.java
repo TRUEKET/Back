@@ -170,12 +170,52 @@ class TrueshotJudgmentFlowTests {
         var f=fixture(true);
         mvc.perform(multipart(f.path()+"/photo").file(photo()).param("n","2").session(f.seller().session())
                 .header(f.seller().csrf().getHeaderName(),f.seller().csrf().getToken())).andExpect(status().isBadRequest());
-        submit(f,analysis(true).replace("imageWidth\":400","imageWidth\":500")).andExpect(status().isBadRequest());
+        for (String data:List.of(analysis(true).replace("imageWidth\":400","imageWidth\":500"),
+                analysis(true).replace("\"x\":20","\"x\":-1"),analysis(true).replace("\"x\":20","\"x\":401"),
+                analysis(true).replace("\"y\":200","\"y\":401"),analysis(true).replace("0.96","1.1"),
+                analysis(true).replace("Victory","V"),analysis(true).replace(",\"confidence\":0.96",""),
+                "{\"imageWidth\":400,\"imageHeight\":400,\"hands\":null}",
+                "{\"imageWidth\":400,\"imageHeight\":400,\"hands\":[null]}")) {
+            submit(f,data).andExpect(status().isBadRequest());
+        }
         assertFalse(photos.existsByRequestIdAndNumber(f.id(),(short)2));
         mvc.perform(post(f.path()+"/judge").session(f.buyer().session())
                 .header(f.buyer().csrf().getHeaderName(),f.buyer().csrf().getToken())).andExpect(status().isForbidden());
         mvc.perform(post(f.path()+"/share").session(f.seller().session()).contentType("application/json")
                 .content("{\"sharePhotos\":true,\"boxes\":[]}")).andExpect(status().isForbidden());
+        mvc.perform(multipart(f.path()+"/photo").file(photo()).param("n","2")
+                .file(new MockMultipartFile("analysis","analysis.json","application/json",analysis(true).getBytes(StandardCharsets.UTF_8)))
+                .session(f.seller().session())).andExpect(status().isForbidden());
+    }
+
+    @Test void submissionRejectsExifOversizeAndUnreadablePhotosBeforeSavingOrAnalyzing() throws Exception {
+        var f=fixture(true);
+        var jpegExif=new ByteArrayOutputStream();
+        jpegExif.write(image,0,2);
+        jpegExif.write(new byte[]{(byte)255,(byte)225,0,8,'E','x','i','f',0,0});
+        jpegExif.write(image,2,image.length-2);
+        submit(f,jpegExif.toByteArray(),analysis(true)).andExpect(status().isBadRequest());
+        var pngOutput=new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(400,400,BufferedImage.TYPE_INT_RGB),"png",pngOutput);
+        byte[] png=pngOutput.toByteArray();
+        var pngExif=new ByteArrayOutputStream();
+        pngExif.write(png,0,33);
+        var chunk=new java.io.DataOutputStream(pngExif);
+        byte[] typeAndPayload={'e','X','I','f','I','I',42,0,8,0,0,0};
+        chunk.writeInt(8); chunk.write(typeAndPayload);
+        var crc=new java.util.zip.CRC32(); crc.update(typeAndPayload); chunk.writeInt((int)crc.getValue());
+        pngExif.write(png,33,png.length-33);
+        submit(f,pngExif.toByteArray(),analysis(true)).andExpect(status().isBadRequest());
+        submit(f,new byte[TrueshotImageInput.MAX_BYTES+1],analysis(true)).andExpect(status().isPayloadTooLarge());
+        submit(f,new byte[]{1,2,3},analysis(true)).andExpect(status().isBadRequest());
+        assertFalse(photos.existsByRequestIdAndNumber(f.id(),(short)2));
+        verifyNoInteractions(screens,originals);
+    }
+
+    @Test void standaloneHandAnalysisRouteHasBeenRemoved() throws Exception {
+        var buyer=buyer();
+        mvc.perform(post("/hand-analyze").session(buyer.session())
+                .header(buyer.csrf().getHeaderName(),buyer.csrf().getToken())).andExpect(status().isNotFound());
     }
 
     @Test void noHandsOrUncertainScreenNeverPassesAndFailedDeletionCanBeRetried() throws Exception {
@@ -268,7 +308,11 @@ class TrueshotJudgmentFlowTests {
     }
     private MockMultipartFile photo() { return new MockMultipartFile("photo","photo.jpg","image/jpeg",image); }
     private ResultActions submit(Fixture f,String data) throws Exception {
-        return mvc.perform(multipart(f.path()+"/photo").file(photo()).file(new MockMultipartFile("analysis","analysis.json",
+        return submit(f,image,data);
+    }
+    private ResultActions submit(Fixture f,byte[] bytes,String data) throws Exception {
+        return mvc.perform(multipart(f.path()+"/photo").file(new MockMultipartFile("photo","photo.jpg","image/jpeg",bytes))
+                .file(new MockMultipartFile("analysis","analysis.json",
                 "application/json",data.getBytes(StandardCharsets.UTF_8))).param("n","2").session(f.seller().session())
                 .header(f.seller().csrf().getHeaderName(),f.seller().csrf().getToken()));
     }
