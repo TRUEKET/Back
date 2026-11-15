@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface TrueshotRequestRepository extends JpaRepository<TrueshotRequest, Long> {
+    List<TrueshotRequest> findByPhase(TrueshotPhase phase);
     List<TrueshotRequest> findByUserIdOrderByCreatedAtDesc(Long userId);
 
     long countByUserId(Long userId);

@@ -22,6 +22,7 @@ public final class TrueshotMaskDtos {
 
     public record MaskResult(MaskStatus maskStatus, String previewPath, String message) {}
     public record ConfirmFirst(@NotNull @Size(max=300) List<@NotNull @Valid Box> boxes) {}
+    public record SharePhotos(@NotNull Boolean sharePhotos, @NotNull @Size(max=300) List<@NotNull @Valid Box> boxes) {}
     public record SecondInstruction(String instruction2, SecondMission mission2,
                                     OffsetDateTime deadline2, OffsetDateTime expiresAt) {}
 }

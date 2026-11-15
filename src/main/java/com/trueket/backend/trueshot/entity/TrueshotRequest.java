@@ -106,6 +106,33 @@ public class TrueshotRequest {
     @Column(name = "judged_at")
     private OffsetDateTime judgedAt;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "judgment_result", columnDefinition = "jsonb")
+    private JsonNode judgmentResult;
+
+    public void storeJudgment(JsonNode result) {
+        if (phase != TrueshotPhase.JUDGING) throw new IllegalStateException("최종 판정 단계가 아닙니다.");
+        judgmentResult = result;
+    }
+
+    public void finishJudgment(boolean passed, boolean shareable, java.util.List<String> reasons, OffsetDateTime now) {
+        if (phase != TrueshotPhase.JUDGING || judgedAt != null) throw new IllegalStateException("최종 판정 단계가 아닙니다.");
+        judgedAt = now;
+        status = passed ? TrueshotStatus.PASSED : TrueshotStatus.FAILED;
+        phase = passed ? (shareable ? TrueshotPhase.SHARE_WAITING : TrueshotPhase.COMPLETED) : TrueshotPhase.FAILED;
+        ArrayNode failures = JsonNodeFactory.instance.arrayNode();
+        reasons.forEach(failures::add);
+        failReasons = failures;
+    }
+
+    public void finishSharing(boolean share, OffsetDateTime now) {
+        if (status != TrueshotStatus.PASSED || phase != TrueshotPhase.SHARE_WAITING || isExpired(now)) {
+            throw new IllegalStateException("사진을 공유할 수 없는 단계입니다.");
+        }
+        if (share) photosSharedAt = now;
+        phase = TrueshotPhase.COMPLETED;
+    }
+
     // 판정은 성공했지만 판매자가 30분 안에 사진을 공유하지 않은 경우 null이다.
     @Column(name = "photos_shared_at")
     private OffsetDateTime photosSharedAt;
