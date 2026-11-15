@@ -24,12 +24,14 @@ public class TrueshotExpiryJob {
     private final TrueshotRequestRepository requests;
     private final TrueshotRequestService service;
     private final TrueshotPhotoRepository photos;
+    private final TrueshotJudgmentService judgments;
 
     public TrueshotExpiryJob(TrueshotRequestRepository requests, TrueshotRequestService service,
-            TrueshotPhotoRepository photos) {
+            TrueshotPhotoRepository photos, TrueshotJudgmentService judgments) {
         this.requests = requests;
         this.service = service;
         this.photos = photos;
+        this.judgments = judgments;
     }
 
     // 요청 기한이 지난 건을 서버에서 실패 또는 사진 미공유 완료로 확정한다.
@@ -42,9 +44,13 @@ public class TrueshotExpiryJob {
                 .forEach(request -> run(request.getId(), id -> service.expirePhoto(id, 1)));
         requests.findByPhaseAndDeadline2LessThanEqual(TrueshotPhase.SECOND_WAITING, now)
                 .forEach(request -> run(request.getId(), id -> service.expirePhoto(id, 2)));
+        requests.findByPhase(TrueshotPhase.JUDGING)
+                .forEach(request -> run(request.getId(), judgments::judgeById));
         // 삭제 API가 일시적으로 실패해도 다음 실행에서 임시 원본을 다시 정리한다.
         photos.findRequestIdsWithOriginalsByStatus(TrueshotStatus.FAILED)
-                .forEach(id -> run(id, service::cleanFailedOriginals));
+                .forEach(id -> run(id, service::cleanFinalOriginals));
+        photos.findRequestIdsWithOriginalsByStatus(TrueshotStatus.PASSED)
+                .forEach(id -> run(id, service::cleanFinalOriginals));
     }
 
     private void run(Long id, LongConsumer action) {

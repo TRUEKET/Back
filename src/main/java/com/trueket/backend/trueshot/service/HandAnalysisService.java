@@ -24,10 +24,18 @@ public class HandAnalysisService {
     }
 
     public Output analyze(MultipartFile photo, Input input, SecondMission mission) {
+        return analyze(prepare(photo, input), input, mission);
+    }
+
+    public TrueshotImageInput.Prepared prepare(MultipartFile photo, Input input) {
         validateHands(input);
         // 모델 입력용 이미지를 축소하기 전에 원본 이미지 크기를 검증한다.
         validateImage(photo, input);
-        var prepared = images.prepare(photo);
+        return images.prepare(photo);
+    }
+
+    // 저장한 원본으로 재시도할 때도 최초 업로드 이미지의 좌표계를 그대로 사용한다.
+    public Output analyze(TrueshotImageInput.Prepared prepared, Input input, SecondMission mission) {
         if (input.hands().isEmpty()) return HandMissionEvaluator.evaluate(input, Status.NO_HANDS, null, mission);
         var detection = screens.detect(prepared);
         if (!detection.found()) return HandMissionEvaluator.evaluate(input, Status.SCREEN_NOT_FOUND, null, mission);

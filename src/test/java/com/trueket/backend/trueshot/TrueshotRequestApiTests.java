@@ -216,11 +216,11 @@ class TrueshotRequestApiTests {
         OffsetDateTime revealed=jdbc.queryForObject("select instruction_2_revealed_at from trueshot_requests where id=?",OffsetDateTime.class,id);
         OffsetDateTime deadline=jdbc.queryForObject("select deadline_2 from trueshot_requests where id=?",OffsetDateTime.class,id);
         assertEquals(60,java.time.Duration.between(revealed,deadline).getSeconds());
-        mvc.perform(multipart(path + "/photo").file(photo()).param("n", "2")
+        mvc.perform(multipart(path + "/photo").file(photo()).file(analysisPart).param("n", "2")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.phase").value("JUDGING"));
-        mvc.perform(multipart(path + "/photo").file(photo()).param("n", "2")
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        mvc.perform(multipart(path + "/photo").file(photo()).file(analysisPart).param("n", "2")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isConflict());
     }
