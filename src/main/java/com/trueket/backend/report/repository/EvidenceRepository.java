@@ -11,4 +11,6 @@ public interface EvidenceRepository extends JpaRepository<Evidence, Long> {
     List<Evidence> findAllByReport_IdOrderByCreatedAtAsc(
             Long reportId
     );
+
+    void deleteAllByReport_Id(Long reportId);
 }

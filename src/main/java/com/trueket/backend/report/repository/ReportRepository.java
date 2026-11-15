@@ -1,6 +1,9 @@
 package com.trueket.backend.report.repository;
 
 import com.trueket.backend.report.entity.Report;
+import com.trueket.backend.report.entity.enums.ReportKind;
+import com.trueket.backend.report.entity.enums.ReportKind;
+import com.trueket.backend.identifier.entity.enums.IdentifierType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -30,9 +33,30 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
     JOIN r.reportIdentifiers ri
     WHERE r.reporterHash = :reporterHash
       AND ri.identifier.id = :identifierId
+      AND r.kind = :kind
     """)
     boolean existsDuplicateReport(
             @Param("reporterHash") String reporterHash,
-            @Param("identifierId") Long identifierId
+            @Param("identifierId") Long identifierId,
+            @Param("kind") ReportKind kind
     );
+
+
+    @Query("""
+    SELECT CASE WHEN COUNT(r) > 0 THEN true ELSE false END
+    FROM Report r
+    JOIN r.reportIdentifiers ri
+    WHERE r.reporterHash = :reporterHash
+      AND ri.identifier.type = :identifierType
+      AND ri.identifier.valueHash = :valueHash
+      AND r.kind = :kind
+    """)
+    boolean existsReportByReporterAndIdentifier(
+            @Param("reporterHash") String reporterHash,
+            @Param("identifierType") IdentifierType identifierType,
+            @Param("valueHash") String valueHash,
+            @Param("kind") ReportKind kind
+    );
+
+
 }
