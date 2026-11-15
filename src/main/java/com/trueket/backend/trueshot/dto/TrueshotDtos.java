@@ -2,6 +2,8 @@ package com.trueket.backend.trueshot.dto;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.trueket.backend.trueshot.entity.TrueshotRequest;
+import com.trueket.backend.trueshot.entity.TrueshotPhoto;
+import com.trueket.backend.trueshot.entity.enums.MaskStatus;
 import com.trueket.backend.trueshot.entity.enums.TrueshotPhase;
 import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
 import jakarta.validation.constraints.AssertTrue;
@@ -74,12 +76,31 @@ public final class TrueshotDtos {
                               OffsetDateTime expiresAt) {}
 
     public record PhotoLink(int number, String url) {}
+    public record SellerPhoto(int number,MaskStatus maskStatus,String previewPath) {}
 
     public record SellerResult(TrueshotStatus status, TrueshotPhase phase, OffsetDateTime judgedAt,
                                OffsetDateTime photosSharedAt, boolean canShare, String message,
                                List<TrueshotChecks.Check> checks,List<String> failReasons,
-                               OffsetDateTime judgmentDeadline,Long pollAfterMillis,String failureCode) {
+                               OffsetDateTime judgmentDeadline,Long pollAfterMillis,String failureCode,
+                               String title,String code,String instruction2,SecondMission mission2,
+                               OffsetDateTime expiresAt,OffsetDateTime deadline1,OffsetDateTime deadline2,
+                               OffsetDateTime serverTime,List<SellerPhoto> photos) {
         public static SellerResult from(TrueshotRequest request, OffsetDateTime now, boolean masksReady) {
+            return build(request,now,masksReady,List.of());
+        }
+
+        public static SellerResult from(TrueshotRequest request,OffsetDateTime now,List<TrueshotPhoto> stored) {
+            boolean ready=stored.size()==2 && stored.stream().allMatch(photo -> photo.getMaskStatus()==MaskStatus.READY
+                    && photo.getMaskedImage()!=null);
+            var photos=stored.stream().sorted(java.util.Comparator.comparing(TrueshotPhoto::getNumber))
+                    .map(photo -> new SellerPhoto(photo.getNumber(),photo.getMaskStatus(),
+                            photo.getMaskStatus()==MaskStatus.READY && photo.getMaskedImage()!=null
+                                    && request.canPreviewSellerPhoto(photo.getNumber(),now)
+                                    ?"/s/"+request.getToken()+"/preview/"+photo.getNumber():null)).toList();
+            return build(request,now,ready,photos);
+        }
+
+        private static SellerResult build(TrueshotRequest request,OffsetDateTime now,boolean masksReady,List<SellerPhoto> photos) {
             var status = effectiveStatus(request, now);
             var phase = effectivePhase(request, now);
             boolean canShare = phase == TrueshotPhase.SHARE_WAITING && masksReady && !request.isExpired(now);
@@ -96,7 +117,9 @@ public final class TrueshotDtos {
                         ?request.getJudgmentResult().get("failureCode").asText():null;
             return new SellerResult(status, phase, request.getJudgedAt(), request.getPhotosSharedAt(), canShare, message,
                     TrueshotChecks.result(request,finished),reasons,request.getJudgmentDeadline(),
-                    phase==TrueshotPhase.JUDGING?2000L:null,failureCode);
+                    phase==TrueshotPhase.JUDGING?2000L:null,failureCode,
+                    request.getTitle(),request.getCode(),request.getInstruction2(),request.getMission2(),
+                    request.getExpiresAt(),request.getDeadline1(),request.getDeadline2(),now,photos);
         }
     }
 

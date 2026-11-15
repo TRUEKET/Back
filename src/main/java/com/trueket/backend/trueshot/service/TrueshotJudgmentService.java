@@ -135,9 +135,7 @@ public class TrueshotJudgmentService {
 
     private SellerResult result(TrueshotRequest request) {
         var stored = photos.findByRequestId(request.getId());
-        boolean ready = stored.size() == 2 && stored.stream().allMatch(photo -> photo.getMaskStatus() == MaskStatus.READY
-                && photo.getMaskedImage()!=null);
-        return SellerResult.from(request, now(), ready);
+        return SellerResult.from(request, now(), stored);
     }
     private OffsetDateTime now() { return OffsetDateTime.now(ZoneOffset.UTC); }
     private ApiException notFound() { return new ApiException(HttpStatus.NOT_FOUND,"트루샷 요청 또는 사진을 찾을 수 없어요."); }

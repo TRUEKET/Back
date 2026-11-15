@@ -202,6 +202,12 @@ public class TrueshotRequest {
         return status == TrueshotStatus.PENDING && phase == TrueshotPhase.WAITING;
     }
 
+    public boolean canPreviewSellerPhoto(short number,OffsetDateTime now) {
+        if (isExpired(now) || (number!=1 && number!=2)) return false;
+        return (number==1 && phase==TrueshotPhase.FIRST_MASKING)
+                || (status==TrueshotStatus.PASSED && phase==TrueshotPhase.SHARE_WAITING);
+    }
+
     public void start(OffsetDateTime now) {
         if (!canStart() || isExpired(now)) {
             throw new IllegalStateException("시작할 수 없는 트루샷 요청입니다.");

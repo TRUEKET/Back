@@ -79,7 +79,10 @@ class TrueshotJudgmentFlowTests {
                 .andExpect(jsonPath("$.checks[1].status").value("PASSED"))
                 .andExpect(jsonPath("$.checks[2].status").value("PASSED"))
                 .andExpect(jsonPath("$.checks[3].status").value("PASSED"))
-                .andExpect(jsonPath("$.failReasons").isEmpty());
+                .andExpect(jsonPath("$.failReasons").isEmpty())
+                .andExpect(jsonPath("$.photos.length()").value(2))
+                .andExpect(jsonPath("$.photos[0].previewPath").value(f.path()+"/preview/1"))
+                .andExpect(jsonPath("$.photos[1].previewPath").value(f.path()+"/preview/2"));
         buyerDetail(f).andExpect(jsonPath("$.photos").isEmpty()).andExpect(jsonPath("$.judgmentResult.passed").value(true));
         buyerPhoto(f,1,f.buyer()).andExpect(status().isNotFound());
         mvc.perform(get(f.path()+"/preview/2").session(f.seller().session())).andExpect(status().isOk());
@@ -93,6 +96,10 @@ class TrueshotJudgmentFlowTests {
         buyerPhoto(f,2,buyer()).andExpect(status().isNotFound());
         mvc.perform(get("/trueshot/"+f.id()+"/photos/1")).andExpect(status().isUnauthorized());
         share(f,true,"[]").andExpect(status().isOk());
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(jsonPath("$.phase").value("COMPLETED"))
+                .andExpect(jsonPath("$.photos[0].previewPath").isEmpty())
+                .andExpect(jsonPath("$.photos[1].previewPath").isEmpty());
         assertTrue(sharedAt.isEqual(requests.findById(f.id()).orElseThrow().getPhotosSharedAt()));
         verify(screens,times(1)).detect(any());
         submit(f,analysis(true)).andExpect(status().isConflict());
@@ -117,7 +124,14 @@ class TrueshotJudgmentFlowTests {
         mvc.perform(get(f.path()+"/result").session(f.seller().session()))
                 .andExpect(jsonPath("$.checks[2].status").value("PENDING"))
                 .andExpect(jsonPath("$.checks[3].status").value("PENDING"))
-                .andExpect(jsonPath("$.failReasons").isEmpty());
+                .andExpect(jsonPath("$.failReasons").isEmpty())
+                .andExpect(jsonPath("$.code").value("AB12"))
+                .andExpect(jsonPath("$.mission2.type").value("GESTURE_POSITION"))
+                .andExpect(jsonPath("$.deadline2").isString())
+                .andExpect(jsonPath("$.photos[0].maskStatus").value("READY"))
+                .andExpect(jsonPath("$.photos[1].maskStatus").value("PENDING"))
+                .andExpect(jsonPath("$.photos[0].previewPath").isEmpty())
+                .andExpect(jsonPath("$.photos[1].previewPath").isEmpty());
         assertNotNull(photos.findByRequestIdAndNumber(f.id(),(short)2).orElseThrow().getHandAnalysis());
         assertNull(requests.findById(f.id()).orElseThrow().getJudgedAt());
         expiry.retryJudgments();
