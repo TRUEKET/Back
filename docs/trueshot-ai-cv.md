@@ -2,7 +2,7 @@
 
 AI·CV 담당자와 회원 탈퇴 담당자가 연결할 계약을 정리한 문서다. 요청·응답 전체와 실행 설정은 [트루샷 API](trueshot-api.md)를 참고한다. 구현된 동작과 합의가 필요한 동작을 구분한다.
 
-2026-11-15 추가: React MediaPipe 결과와 사진을 받는 독립 `POST /hand-analyze`를 구현했다. [손 인식 연동 명세](hand-analyze-api.md)에 multipart·좌표·회전·응답·프론트 예제를 정리했다. 확정된 3개 미션 생성·저장·조건 비교를 지원하며, 비교 결과를 최종 인증 상태·공유에 연결했다. [최종 판정·공유 API](trueshot-finalization-api.md)를 참고한다.
+2026-11-15 추가: React MediaPipe 결과와 사진을 `POST /s/{token}/photo`의 2차 제출(n=2)로 함께 받는다. 별도 손 분석 호출은 사용하지 않는다. [손 인식 연동 명세](hand-analyze-api.md)에 multipart·좌표·회전·응답·프론트 예제를 정리했다. 확정된 3개 미션 생성·저장·조건 비교를 지원하며, 비교 결과를 최종 인증 상태·공유에 연결했다. [최종 판정·공유 API](trueshot-finalization-api.md)를 참고한다.
 
 ## 1. 사진 제출
 
@@ -32,9 +32,9 @@ AI·CV 담당자와 회원 탈퇴 담당자가 연결할 계약을 정리한 문
 
 실행 전에 `src/main/resources/db/trueshot-second-mission-schema.sql`을 적용해야 한다. 기존 임시 미션을 새 유형으로 추측해 채우지 않으며, 이전 진행 중 요청은 새로 생성해야 한다.
 
-`POST /hand-analyze`에 multipart `token`을 함께 보내면 시작한 판매자 세션과 SECOND_WAITING·만료를 검사하고, 서버 저장 미션과 비교한다. token을 생략하면 관찰값만 반환한다. 화면이 불확실하면 통과시키지 않는다. 다른 손의 동작과 위치를 섞어 통과시키지 않는다.
+`POST /s/{token}/photo`에 n=2, photo, analysis JSON을 함께 보내면 판매자 세션·SECOND_WAITING·마감을 검사한 뒤 접수한 원본으로 서버 저장 미션과 비교한다. 화면이 불확실하면 통과시키지 않는다. 다른 손의 동작과 위치를 섞어 통과시키지 않는다.
 
-미션 공개 시각은 `instruction_2_revealed_at`, 두 번째 마감은 공개 + 1분인 `deadline_2`다. 전체 요청 30분 기한도 적용된다. 두 번째 사진은 한 번만 접수한다. 손 분석은 두 번째 사진 접수 전에 호출한다. 분석의 MATCHED는 최종 트루샷 PASSED가 아니다.
+미션 공개 시각은 `instruction_2_revealed_at`, 두 번째 마감은 공개 + 1분인 `deadline_2`다. 전체 요청 30분 기한도 적용된다. 두 번째 사진은 한 번만 접수한다. 손 분석은 두 번째 사진 제출에 포함되어 자동 실행된다. 최종 결과는 판매자 result 및 구매자 상세 API로 조회한다.
 
 ## 3. AI 호출·결과 저장 계약
 
