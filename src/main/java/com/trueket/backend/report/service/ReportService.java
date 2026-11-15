@@ -8,20 +8,22 @@ import com.trueket.backend.global.exception.ErrorCode;
 import com.trueket.backend.report.dto.ReportDetailResponse;
 import com.trueket.backend.report.dto.ReportIdentifierResponse;
 import com.trueket.backend.report.dto.ReportListResponse;
+import com.trueket.backend.report.entity.Evidence;
 import com.trueket.backend.report.entity.Report;
 import com.trueket.backend.report.entity.ReportIdentifier;
 import com.trueket.backend.report.repository.EvidenceRepository;
 import com.trueket.backend.report.repository.ReportIdentifierRepository;
 import com.trueket.backend.report.repository.ReportRepository;
 
-import java.util.List;
-
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -34,14 +36,21 @@ public class ReportService {
     private final DisputeItemRepository disputeItemRepository;
     private final EntityManager entityManager;
 
-    // RP-06: 내 신고 목록 조회
+    // Supabase Storage 증빙 파일 관리
+    private final SupabaseReportEvidenceStore supabaseReportEvidenceStore;
+
+    // =====================================================
+    // RP-06. 내 신고 목록 조회
+    // =====================================================
+
     public Page<ReportListResponse> getMyReports(
             Long userId,
             Pageable pageable
     ) {
         Page<Report> reports = reportRepository
                 .findAllByUser_IdOrderByCreatedAtDesc(
-                        userId, pageable
+                        userId,
+                        pageable
                 );
 
         List<Long> reportIds = reports.getContent()
@@ -74,12 +83,14 @@ public class ReportService {
         });
     }
 
-    // RP-06: 내 신고 상세 조회
+    // =====================================================
+    // RP-06. 내 신고 상세 조회
+    // =====================================================
+
     public ReportDetailResponse getMyReportDetail(
             Long userId,
             Long reportId
     ) {
-        // 본인이 작성한 신고인지 확인
         Report report = reportRepository
                 .findByIdAndUser_Id(reportId, userId)
                 .orElseThrow(() ->
@@ -88,12 +99,10 @@ public class ReportService {
                         )
                 );
 
-        // 신고에 연결된 식별자 조회
         List<ReportIdentifier> reportIdentifiers =
                 reportIdentifierRepository
                         .findAllByReport_Id(reportId);
 
-        // 숨김 처리되지 않은 식별자만 반환
         List<ReportIdentifierResponse> identifiers =
                 reportIdentifiers.stream()
                         .filter(ri -> !ri.isHidden())
@@ -117,13 +126,17 @@ public class ReportService {
         );
     }
 
-    // RP-07: 내 신고 삭제
+    // =====================================================
+    // RP-07. 내 신고 삭제 + Supabase Storage 증빙 삭제
+    // =====================================================
+
     @Transactional
     public void deleteMyReport(
             Long userId,
             Long reportId
     ) {
-        // 본인이 작성한 신고인지 확인
+
+        // 1. 본인이 작성한 신고인지 확인
         Report report = reportRepository
                 .findByIdAndUser_Id(reportId, userId)
                 .orElseThrow(() ->
@@ -132,30 +145,43 @@ public class ReportService {
                         )
                 );
 
-        // 신고에 연결된 이의제기의 삭제 이력 보존
-        var disputeItems = disputeItemRepository.findAllByReport_Id(reportId);
+        // 2. 해당 신고에 연결된 증빙 이미지 목록 조회
+        List<Evidence> evidences = evidenceRepository
+                .findAllByReport_IdOrderByCreatedAtAsc(reportId);
+
+        // 3. 이의제기 삭제 이력 보존
+        var disputeItems =
+                disputeItemRepository.findAllByReport_Id(reportId);
 
         for (var item : disputeItems) {
             entityManager.createNativeQuery("""
-            INSERT INTO public.dispute_deleted_records
-                (dispute_id, report_id, decided_at)
-            VALUES (?1, ?2, NOW())
-            ON CONFLICT (dispute_id, report_id) DO NOTHING
-            """)
+                    INSERT INTO public.dispute_deleted_records
+                        (dispute_id, report_id, decided_at)
+                    VALUES (?1, ?2, NOW())
+                    ON CONFLICT (dispute_id, report_id) DO NOTHING
+                    """)
                     .setParameter(1, item.getDispute().getId())
                     .setParameter(2, reportId)
                     .executeUpdate();
         }
-        // 이의제기 연결 데이터 삭제
+
+        // 4. Supabase Storage에 저장된 실제 증빙 파일 삭제
+        for (Evidence evidence : evidences) {
+            supabaseReportEvidenceStore.deleteReport(
+                    evidence.getStorageKey()
+            );
+        }
+
+        // 5. 이의제기 연결 데이터 삭제
         disputeItemRepository.deleteAllByReport_Id(reportId);
 
-        // 신고 증빙 데이터 삭제
+        // 6. 증빙 DB 데이터 삭제
         evidenceRepository.deleteAllByReport_Id(reportId);
 
-        // 신고-식별자 연결 데이터 삭제
+        // 7. 신고-식별자 연결 데이터 삭제
         reportIdentifierRepository.deleteAllByReport_Id(reportId);
 
-        // 신고 원본 삭제
+        // 8. 신고 원본 삭제
         reportRepository.delete(report);
     }
 }
