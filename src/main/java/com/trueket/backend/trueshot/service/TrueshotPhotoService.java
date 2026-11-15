@@ -2,6 +2,7 @@ package com.trueket.backend.trueshot.service;
 
 import com.trueket.backend.global.exception.ApiException;
 import com.trueket.backend.trueshot.dto.TrueshotPhotoResponse;
+import com.trueket.backend.trueshot.dto.TrueshotChecks;
 import com.trueket.backend.trueshot.dto.HandAnalysisDtos.Input;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trueket.backend.trueshot.entity.TrueshotPhoto;
@@ -82,8 +83,10 @@ public class TrueshotPhotoService {
         }
         if (!result.passed()) {
             request.firstPhotoRejected(receivedAt, checkedAt);
+            var checks=TrueshotChecks.first(result.clear(),result.codeVisible(),result.codeMatches());
             return new TrueshotPhotoResponse(1, request.getPhase(), false,
-                    request.getDeadline1(), result.retryReasons());
+                    request.getDeadline1(), result.retryReasons(),checks,checks.stream()
+                            .filter(check -> check.status()==TrueshotChecks.Outcome.FAILED).map(TrueshotChecks.Check::message).toList());
         }
         String key = key(request.getId());
         try {
@@ -96,7 +99,8 @@ public class TrueshotPhotoService {
         photo.storeOriginal(key);
         photos.save(photo);
         request.firstPhotoAccepted(checkedAt);
-        return new TrueshotPhotoResponse(1, request.getPhase(), true, null, List.of());
+        return new TrueshotPhotoResponse(1, request.getPhase(), true, null, List.of(),
+                TrueshotChecks.first(true,true,true),List.of());
     }
 
     private TrueshotPhotoResponse uploadSecond(TrueshotRequest request,
@@ -121,7 +125,7 @@ public class TrueshotPhotoService {
         photo.storeHandAnalysis(json.valueToTree(analysis));
         photos.save(photo);
         request.secondPhotoReceived(receivedAt);
-        return new TrueshotPhotoResponse(2, request.getPhase(), true, null, List.of());
+        return new TrueshotPhotoResponse(2, request.getPhase(), true, null, List.of(),TrueshotChecks.pendingSecond(),List.of());
     }
 
     private String key(Long requestId) {

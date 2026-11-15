@@ -75,6 +75,7 @@ public class TrueshotJudgmentService {
             var reasons = new ArrayList<String>();
             boolean firstVerified = request.getFirstVerifiedAt() != null;
             if (!firstVerified) reasons.add("첫 번째 사진의 코드·화질 확인이 완료되지 않음");
+            if (Boolean.FALSE.equals(analysis.clear())) reasons.add("두 번째 사진이 흐리거나 예매 화면의 내용을 확인할 수 없음");
             if (analysis.missionCheck().status() != CheckStatus.MATCHED) {
                 reasons.add(switch (analysis.status()) {
                     case NO_HANDS -> "두 번째 사진에서 손을 찾지 못함";
@@ -87,6 +88,7 @@ public class TrueshotJudgmentService {
             var snapshot = json.createObjectNode();
             snapshot.put("firstPhotoVerified", firstVerified);
             snapshot.put("analysisStatus", analysis.status().name());
+            snapshot.put("secondPhotoClear",analysis.clear());
             snapshot.put("passed", reasons.isEmpty());
             snapshot.set("missionCheck",json.valueToTree(analysis.missionCheck()));
             snapshot.set("failReasons",json.valueToTree(reasons));

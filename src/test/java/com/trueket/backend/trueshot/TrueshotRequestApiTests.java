@@ -160,14 +160,22 @@ class TrueshotRequestApiTests {
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accepted").value(false))
-                .andExpect(jsonPath("$.retryReasons[0]").exists());
+                .andExpect(jsonPath("$.retryReasons[0]").exists())
+                .andExpect(jsonPath("$.checks[0].code").value("PHOTO_QUALITY"))
+                .andExpect(jsonPath("$.checks[0].status").value("PASSED"))
+                .andExpect(jsonPath("$.checks[1].code").value("AUTH_CODE"))
+                .andExpect(jsonPath("$.checks[1].status").value("FAILED"))
+                .andExpect(jsonPath("$.failReasons[0]").exists());
         assertEquals(0, jdbc.queryForObject(
                 "select count(*) from trueshot_photos where request_id = ?", Integer.class, id));
         mvc.perform(multipart(path + "/photo").file(photo()).param("n", "1")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accepted").value(true))
-                .andExpect(jsonPath("$.phase").value("FIRST_MASKING"));
+                .andExpect(jsonPath("$.phase").value("FIRST_MASKING"))
+                .andExpect(jsonPath("$.checks[0].status").value("PASSED"))
+                .andExpect(jsonPath("$.checks[1].status").value("PASSED"))
+                .andExpect(jsonPath("$.failReasons").isEmpty());
         assertEquals(1, jdbc.queryForObject(
                 "select count(*) from trueshot_photos where request_id = ?", Integer.class, id));
         verify(originals).upload(anyString(), any(byte[].class), anyString());
@@ -198,7 +206,7 @@ class TrueshotRequestApiTests {
                 "select mission_2_type from trueshot_requests where id=?",String.class,id));
         mvc.perform(get("/trueshot/{id}",id).session(buyer.session()))
                 .andExpect(jsonPath("$.mission2.type").value(mission.get("type").asText()));
-        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"예매"));
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"예매",true));
         String direction=mission.path("position").asText();
         int x=direction.equals("LEFT")?20:direction.equals("RIGHT")?380:200;
         int y=direction.equals("ABOVE")?20:direction.equals("BELOW")?380:200;

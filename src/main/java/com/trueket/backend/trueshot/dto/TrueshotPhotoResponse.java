@@ -6,4 +6,5 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 public record TrueshotPhotoResponse(int number, TrueshotPhase phase, boolean accepted,
-                                    OffsetDateTime deadline, List<String> retryReasons) {}
+                                    OffsetDateTime deadline, List<String> retryReasons,
+                                    List<TrueshotChecks.Check> checks,List<String> failReasons) {}

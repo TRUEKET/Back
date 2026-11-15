@@ -59,7 +59,8 @@ public class TrueshotSellerController {
         if (number==2) {
             try {
                 var judged=judgments.judge(token);
-                result=new TrueshotPhotoResponse(2,judged.phase(),true,null,java.util.List.of());
+                result=new TrueshotPhotoResponse(2,judged.phase(),true,null,java.util.List.of(),
+                        judged.checks().stream().filter(check -> check.photoNumber()==2).toList(),judged.failReasons());
             } catch (ApiException e) {
                 // 접수는 이미 커밋했다. 외부 서비스 장애는 같은 사진으로 재시도한다.
                 if (e.getStatus()!=HttpStatus.SERVICE_UNAVAILABLE) throw e;

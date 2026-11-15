@@ -23,7 +23,7 @@ class HandAnalysisServiceTests {
         when(screens.detect(any())).thenAnswer(call -> {
             var prepared=call.getArgument(0,TrueshotImageInput.Prepared.class);
             assertEquals(2400,ImageIO.read(new ByteArrayInputStream(prepared.bytes())).getWidth());
-            return new BookingScreenDetector.Detection(true,true,.3,.2,.4,.6,"공연 A");
+            return new BookingScreenDetector.Detection(true,true,.3,.2,.4,.6,"공연 A",true);
         });
         var input=new Input(4800,800,List.of(new Hand(300.0,420.0,"Victory",.96),
                 new Hand(4000.0,420.0,"Thumb_Up",.8),new Hand(1440.0,100.0,"None",.2),
@@ -46,12 +46,12 @@ class HandAnalysisServiceTests {
 
     @Test void missingAndUncertainScreensNeverInventPositions() throws Exception {
         var photo=photo(400,400);
-        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(false,false,0,0,0,0,""));
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(false,false,0,0,0,0,"",true));
         var result=analyze(photo,input());
         assertEquals(Status.SCREEN_NOT_FOUND,result.status());
         assertEquals(Position.UNKNOWN,result.hands().get(0).position());
         assertNull(result.screen());
-        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,false,.2,.2,.5,.5,""));
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,false,.2,.2,.5,.5,"",true));
         assertEquals(Status.SCREEN_UNCERTAIN,analyze(photo,input()).status());
     }
 
@@ -60,7 +60,7 @@ class HandAnalysisServiceTests {
         when(screens.detect(any())).thenThrow(new ApiException(HttpStatus.SERVICE_UNAVAILABLE,"분석 실패"));
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE,assertThrows(ApiException.class,()->analyze(photo,input())).getStatus());
         reset(screens);
-        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.9,0,.5,.5,""));
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.9,0,.5,.5,"",true));
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE,assertThrows(ApiException.class,()->analyze(photo,input())).getStatus());
     }
 

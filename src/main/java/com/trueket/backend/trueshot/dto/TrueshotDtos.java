@@ -49,12 +49,7 @@ public final class TrueshotDtos {
         }
 
         public static RequestDetail from(TrueshotRequest request, OffsetDateTime now, List<PhotoLink> photos) {
-            boolean timeout = request.isExpired(now) && request.getStatus() != TrueshotStatus.PASSED
-                    && request.getStatus() != TrueshotStatus.FAILED;
-            List<String> reasons = timeout
-                    ? List.of(request.getStartedAt() == null
-                        ? "30분 안에 시작하지 않음" : "30분 안에 인증이 완료되지 않음")
-                    : reasonList(request.getFailReasons());
+            List<String> reasons = failureReasons(request,now);
             return new RequestDetail(request.getId(), request.getTitle(), request.getCode(),
                     "/s/" + request.getToken(),
                     effectiveStatus(request, now), effectivePhase(request, now),
@@ -81,20 +76,36 @@ public final class TrueshotDtos {
     public record PhotoLink(int number, String url) {}
 
     public record SellerResult(TrueshotStatus status, TrueshotPhase phase, OffsetDateTime judgedAt,
-                               OffsetDateTime photosSharedAt, boolean canShare, String message) {
+                               OffsetDateTime photosSharedAt, boolean canShare, String message,
+                               List<TrueshotChecks.Check> checks,List<String> failReasons) {
         public static SellerResult from(TrueshotRequest request, OffsetDateTime now, boolean masksReady) {
             var status = effectiveStatus(request, now);
             var phase = effectivePhase(request, now);
             boolean canShare = phase == TrueshotPhase.SHARE_WAITING && masksReady && !request.isExpired(now);
-            String message = status == TrueshotStatus.FAILED ? "시간 초과 또는 촬영 지시 불일치로 인증하지 못했어요."
+            var reasons=failureReasons(request,now);
+            String message = status == TrueshotStatus.FAILED ? (reasons.isEmpty()?"인증하지 못했어요.":reasons.get(0))
                     : status == TrueshotStatus.PASSED ? "사진 확인을 완료했어요."
                     : "사진을 확인하고 있어요.";
-            return new SellerResult(status, phase, request.getJudgedAt(), request.getPhotosSharedAt(), canShare, message);
+            boolean finished=status==TrueshotStatus.PASSED || status==TrueshotStatus.FAILED;
+            return new SellerResult(status, phase, request.getJudgedAt(), request.getPhotosSharedAt(), canShare, message,
+                    TrueshotChecks.result(request,finished),reasons);
         }
     }
 
+    private static List<String> failureReasons(TrueshotRequest request,OffsetDateTime now) {
+        if (request.getStatus()==TrueshotStatus.PASSED || request.getStatus()==TrueshotStatus.FAILED) {
+            return reasonList(request.getFailReasons());
+        }
+        if (request.isExpired(now)) return List.of(request.getStartedAt()==null
+                ? "30분 안에 시작하지 않음":"30분 안에 인증이 완료되지 않음");
+        if (request.firstPhotoTimedOut(now)) return List.of("첫 번째 사진이 시간 내에 전송되지 않음");
+        if (request.secondPhotoTimedOut(now)) return List.of("두 번째 사진이 시간 내에 전송되지 않음");
+        return List.of();
+    }
+
     private static TrueshotStatus effectiveStatus(TrueshotRequest request, OffsetDateTime now) {
-        if (request.isExpired(now) && request.getStatus() != TrueshotStatus.PASSED) {
+        if (request.getStatus() != TrueshotStatus.PASSED && (request.isExpired(now)
+                || request.firstPhotoTimedOut(now) || request.secondPhotoTimedOut(now))) {
             return TrueshotStatus.FAILED;
         }
         return request.getStatus();
@@ -105,6 +116,7 @@ public final class TrueshotDtos {
             return request.getStatus() == TrueshotStatus.PASSED
                     ? TrueshotPhase.COMPLETED : TrueshotPhase.FAILED;
         }
+        if (request.firstPhotoTimedOut(now) || request.secondPhotoTimedOut(now)) return TrueshotPhase.FAILED;
         return request.getPhase();
     }
 }
