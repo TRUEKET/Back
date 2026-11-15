@@ -1,5 +1,7 @@
 package com.trueket.backend.trueshot.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.trueket.backend.trueshot.entity.TrueshotRequest;
 import com.trueket.backend.trueshot.entity.TrueshotPhoto;
@@ -19,18 +21,22 @@ public final class TrueshotDtos {
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public record CreateRequest(
-            @Size(max = 20, message = "요청 제목은 20자 이하로 입력해 주세요")
+            @Schema(description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용", example = "공연 티켓 인증") @Size(max = 20, message = "요청 제목은 20자 이하로 입력해 주세요")
             String title
     ) {}
 
     public record SellerStartRequest(
-            @AssertTrue(message = "사진 전달에 동의해야 인증을 시작할 수 있어요")
+            @Schema(description = "사진 전달 동의. 인증을 시작하려면 반드시 true", example = "true") @AssertTrue(message = "사진 전달에 동의해야 인증을 시작할 수 있어요")
             boolean sellerConsented
     ) {}
 
     public record RequestSummary(
-            Long id, String title, TrueshotStatus status, TrueshotPhase phase,
-            OffsetDateTime createdAt, OffsetDateTime expiresAt
+            @Schema(description = "트루샷 요청 ID", example = "1") Long id,
+            @Schema(description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용", example = "공연 티켓 인증") String title,
+            @Schema(description = "인증 요청 상태") TrueshotStatus status,
+            @Schema(description = "현재 인증 진행 단계") TrueshotPhase phase,
+            @Schema(description = "요청 생성 시각") OffsetDateTime createdAt,
+            @Schema(description = "인증 링크 만료 시각") OffsetDateTime expiresAt
     ) {
         public static RequestSummary from(TrueshotRequest request, OffsetDateTime now) {
             return new RequestSummary(request.getId(), request.getTitle(),
@@ -40,11 +46,24 @@ public final class TrueshotDtos {
     }
 
     public record RequestDetail(
-            Long id, String title, String code, String sellerPath,
-            TrueshotStatus status, TrueshotPhase phase, String instruction2, SecondMission mission2,
-            OffsetDateTime createdAt, OffsetDateTime expiresAt, OffsetDateTime startedAt,
-            OffsetDateTime deadline1, OffsetDateTime deadline2, OffsetDateTime photosSharedAt,
-            List<String> failReasons, OffsetDateTime judgedAt, Map<String,Object> judgmentResult, List<PhotoLink> photos
+            @Schema(description = "트루샷 요청 ID", example = "1") Long id,
+            @Schema(description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용", example = "공연 티켓 인증") String title,
+            @Schema(description = "사진에 함께 표시할 인증 코드") String code,
+            @Schema(description = "판매자에게 전달할 인증 링크의 상대 경로", example = "/s/{token}") String sellerPath,
+            @Schema(description = "인증 요청 상태") TrueshotStatus status,
+            @Schema(description = "현재 인증 진행 단계") TrueshotPhase phase,
+            @Schema(description = "두 번째 사진 촬영 안내. 미션 발급 전 null") String instruction2,
+            @Schema(description = "두 번째 사진의 촬영 미션. 발급 전 null") SecondMission mission2,
+            @Schema(description = "요청 생성 시각") OffsetDateTime createdAt,
+            @Schema(description = "인증 링크 만료 시각") OffsetDateTime expiresAt,
+            @Schema(description = "판매자 인증 시작 시각. 시작 전 null") OffsetDateTime startedAt,
+            @Schema(description = "첫 번째 사진 제출 기한") OffsetDateTime deadline1,
+            @Schema(description = "두 번째 사진 제출 기한. 미션 발급 전 null") OffsetDateTime deadline2,
+            @Schema(description = "사진 공유 완료 시각. 미공유 시 null") OffsetDateTime photosSharedAt,
+            @Schema(description = "인증 실패 사유 목록") List<String> failReasons,
+            @Schema(description = "최종 판정 완료 시각. 판정 전 null") OffsetDateTime judgedAt,
+            @Schema(description = "최종 판정 상세. 판정 전 null") Map<String,Object> judgmentResult,
+            @Schema(description = "조회 가능한 사진 정보 목록") List<PhotoLink> photos
     ) {
         public static RequestDetail from(TrueshotRequest request, OffsetDateTime now) {
             return from(request, now, List.of());
@@ -70,21 +89,50 @@ public final class TrueshotDtos {
         return StreamSupport.stream(reasons.spliterator(), false).map(JsonNode::asText).toList();
     }
 
-    public record SellerLink(String title, OffsetDateTime expiresAt) {}
+    public record SellerLink(
+            @Schema(description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용", example = "공연 티켓 인증") String title,
+            @Schema(description = "인증 링크 만료 시각") OffsetDateTime expiresAt
+    ) {}
 
-    public record SellerStart(String title, String code, OffsetDateTime deadline1,
-                              OffsetDateTime expiresAt) {}
+    public record SellerStart(
+            @Schema(description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용", example = "공연 티켓 인증") String title,
+            @Schema(description = "사진에 함께 표시할 인증 코드") String code,
+            @Schema(description = "첫 번째 사진 제출 기한") OffsetDateTime deadline1,
+            @Schema(description = "인증 링크 만료 시각") OffsetDateTime expiresAt
+    ) {}
 
-    public record PhotoLink(int number, String url) {}
-    public record SellerPhoto(int number,MaskStatus maskStatus,String previewPath) {}
+    public record PhotoLink(
+            @Schema(description = "사진 번호: 1 또는 2", example = "1") int number,
+            @Schema(description = "구매자가 조회할 공유 사진의 상대 경로", example = "/trueshot/1/photos/1") String url
+    ) {}
+    public record SellerPhoto(
+            @Schema(description = "사진 번호: 1 또는 2", example = "1") int number,
+            @Schema(description = "개인정보 마스킹 처리 상태") MaskStatus maskStatus,
+            @Schema(description = "현재 단계에서 조회 가능한 마스킹 사진 경로. 조회 불가 시 null") String previewPath
+    ) {}
 
-    public record SellerResult(TrueshotStatus status, TrueshotPhase phase, OffsetDateTime judgedAt,
-                               OffsetDateTime photosSharedAt, boolean canShare, String message,
-                               List<TrueshotChecks.Check> checks,List<String> failReasons,
-                               OffsetDateTime judgmentDeadline,Long pollAfterMillis,String failureCode,
-                               String title,String code,String instruction2,SecondMission mission2,
-                               OffsetDateTime expiresAt,OffsetDateTime deadline1,OffsetDateTime deadline2,
-                               OffsetDateTime serverTime,List<SellerPhoto> photos) {
+    public record SellerResult(
+            @Schema(description = "인증 요청 상태") TrueshotStatus status,
+            @Schema(description = "현재 인증 진행 단계") TrueshotPhase phase,
+            @Schema(description = "최종 판정 완료 시각. 판정 전 null") OffsetDateTime judgedAt,
+            @Schema(description = "사진 공유 완료 시각. 미공유 시 null") OffsetDateTime photosSharedAt,
+            @Schema(description = "현재 사진 공유 가능 여부") boolean canShare,
+            @Schema(description = "처리 상태 안내 메시지") String message,
+            @Schema(description = "사진별 품질·인증 코드·촬영 미션 검사 결과") List<TrueshotChecks.Check> checks,
+            @Schema(description = "인증 실패 사유 목록") List<String> failReasons,
+            @Schema(description = "최종 판정 제한 시각") OffsetDateTime judgmentDeadline,
+            @Schema(description = "JUDGING 단계에서 결과 재조회 간격(ms). 그 외 null", example = "2000") Long pollAfterMillis,
+            @Schema(description = "실패 구분 코드. 분석 시간 초과 시 ANALYSIS_TIMEOUT") String failureCode,
+            @Schema(description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용", example = "공연 티켓 인증") String title,
+            @Schema(description = "사진에 함께 표시할 인증 코드") String code,
+            @Schema(description = "두 번째 사진 촬영 안내. 미션 발급 전 null") String instruction2,
+            @Schema(description = "두 번째 사진의 촬영 미션. 발급 전 null") SecondMission mission2,
+            @Schema(description = "인증 링크 만료 시각") OffsetDateTime expiresAt,
+            @Schema(description = "첫 번째 사진 제출 기한") OffsetDateTime deadline1,
+            @Schema(description = "두 번째 사진 제출 기한. 미션 발급 전 null") OffsetDateTime deadline2,
+            @Schema(description = "응답을 생성한 서버 시각") OffsetDateTime serverTime,
+            @Schema(description = "조회 가능한 사진 정보 목록") List<SellerPhoto> photos
+    ) {
         public static SellerResult from(TrueshotRequest request, OffsetDateTime now, boolean masksReady) {
             return build(request,now,masksReady,List.of());
         }

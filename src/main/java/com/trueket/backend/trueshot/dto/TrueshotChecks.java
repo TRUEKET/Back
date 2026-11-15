@@ -1,5 +1,7 @@
 package com.trueket.backend.trueshot.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import com.trueket.backend.trueshot.entity.TrueshotRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;
@@ -9,7 +11,12 @@ public final class TrueshotChecks {
     private TrueshotChecks() {}
     public enum Code { PHOTO_QUALITY, AUTH_CODE, MISSION }
     public enum Outcome { PASSED, FAILED, PENDING, NOT_CHECKED }
-    public record Check(int photoNumber, Code code, Outcome status, String message) {}
+    public record Check(
+            @Schema(description = "검사 대상 사진 번호", example = "1") int photoNumber,
+            @Schema(description = "검사 항목: 사진 품질, 인증 코드 또는 촬영 미션") Code code,
+            @Schema(description = "항목별 검사 결과: 통과, 실패, 대기 또는 미검사") Outcome status,
+            @Schema(description = "처리 상태 안내 메시지") String message
+    ) {}
 
     public static List<Check> first(boolean clear, boolean codeVisible, boolean codeMatches) {
         boolean code=codeVisible && codeMatches;
