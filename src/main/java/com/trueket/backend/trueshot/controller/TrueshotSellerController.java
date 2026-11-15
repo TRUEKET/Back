@@ -57,14 +57,17 @@ public class TrueshotSellerController {
         requireSeller(request,token);
         var result=photos.upload(token, number, photo, analysis);
         if (number==2) {
+            SellerResult judged;
             try {
-                var judged=judgments.judge(token);
-                result=new TrueshotPhotoResponse(2,judged.phase(),true,null,java.util.List.of(),
-                        judged.checks().stream().filter(check -> check.photoNumber()==2).toList(),judged.failReasons());
+                judged=judgments.judge(token);
             } catch (ApiException e) {
                 // 접수는 이미 커밋했다. 외부 서비스 장애는 같은 사진으로 재시도한다.
                 if (e.getStatus()!=HttpStatus.SERVICE_UNAVAILABLE) throw e;
+                judged=judgments.sellerResult(token);
             }
+            result=new TrueshotPhotoResponse(2,judged.phase(),true,
+                    judged.phase()==com.trueket.backend.trueshot.entity.enums.TrueshotPhase.JUDGING?judged.judgmentDeadline():null,
+                    java.util.List.of(),judged.checks().stream().filter(check -> check.photoNumber()==2).toList(),judged.failReasons());
         }
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
     }
@@ -85,12 +88,6 @@ public class TrueshotSellerController {
     public ResponseEntity<SellerResult> result(@PathVariable String token,HttpServletRequest request) {
         requireSeller(request,token);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(judgments.sellerResult(token));
-    }
-
-    @PostMapping("/judge")
-    public ResponseEntity<SellerResult> judge(@PathVariable String token,HttpServletRequest request) {
-        requireSeller(request,token);
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(judgments.judge(token));
     }
 
     @PostMapping("/share")

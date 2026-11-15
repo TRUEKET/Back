@@ -77,7 +77,8 @@ public final class TrueshotDtos {
 
     public record SellerResult(TrueshotStatus status, TrueshotPhase phase, OffsetDateTime judgedAt,
                                OffsetDateTime photosSharedAt, boolean canShare, String message,
-                               List<TrueshotChecks.Check> checks,List<String> failReasons) {
+                               List<TrueshotChecks.Check> checks,List<String> failReasons,
+                               OffsetDateTime judgmentDeadline,Long pollAfterMillis,String failureCode) {
         public static SellerResult from(TrueshotRequest request, OffsetDateTime now, boolean masksReady) {
             var status = effectiveStatus(request, now);
             var phase = effectivePhase(request, now);
@@ -85,10 +86,17 @@ public final class TrueshotDtos {
             var reasons=failureReasons(request,now);
             String message = status == TrueshotStatus.FAILED ? (reasons.isEmpty()?"인증하지 못했어요.":reasons.get(0))
                     : status == TrueshotStatus.PASSED ? "사진 확인을 완료했어요."
+                    : phase==TrueshotPhase.JUDGING && request.getSecondReceivedAt()!=null
+                            && !now.isBefore(request.getSecondReceivedAt().plusSeconds(10))
+                            ? "사진 분석이 지연되고 있어요. 자동으로 다시 확인 중입니다."
                     : "사진을 확인하고 있어요.";
             boolean finished=status==TrueshotStatus.PASSED || status==TrueshotStatus.FAILED;
+            String failureCode=request.judgmentTimedOut(now) && !request.isExpired(now)?"ANALYSIS_TIMEOUT"
+                    : request.getJudgmentResult()!=null && request.getJudgmentResult().path("failureCode").isTextual()
+                        ?request.getJudgmentResult().get("failureCode").asText():null;
             return new SellerResult(status, phase, request.getJudgedAt(), request.getPhotosSharedAt(), canShare, message,
-                    TrueshotChecks.result(request,finished),reasons);
+                    TrueshotChecks.result(request,finished),reasons,request.getJudgmentDeadline(),
+                    phase==TrueshotPhase.JUDGING?2000L:null,failureCode);
         }
     }
 
@@ -98,6 +106,7 @@ public final class TrueshotDtos {
         }
         if (request.isExpired(now)) return List.of(request.getStartedAt()==null
                 ? "30분 안에 시작하지 않음":"30분 안에 인증이 완료되지 않음");
+        if (request.judgmentTimedOut(now)) return List.of(TrueshotRequest.ANALYSIS_TIMEOUT_REASON);
         if (request.firstPhotoTimedOut(now)) return List.of("첫 번째 사진이 시간 내에 전송되지 않음");
         if (request.secondPhotoTimedOut(now)) return List.of("두 번째 사진이 시간 내에 전송되지 않음");
         return List.of();
@@ -105,7 +114,7 @@ public final class TrueshotDtos {
 
     private static TrueshotStatus effectiveStatus(TrueshotRequest request, OffsetDateTime now) {
         if (request.getStatus() != TrueshotStatus.PASSED && (request.isExpired(now)
-                || request.firstPhotoTimedOut(now) || request.secondPhotoTimedOut(now))) {
+                || request.firstPhotoTimedOut(now) || request.secondPhotoTimedOut(now) || request.judgmentTimedOut(now))) {
             return TrueshotStatus.FAILED;
         }
         return request.getStatus();
@@ -116,7 +125,7 @@ public final class TrueshotDtos {
             return request.getStatus() == TrueshotStatus.PASSED
                     ? TrueshotPhase.COMPLETED : TrueshotPhase.FAILED;
         }
-        if (request.firstPhotoTimedOut(now) || request.secondPhotoTimedOut(now)) return TrueshotPhase.FAILED;
+        if (request.firstPhotoTimedOut(now) || request.secondPhotoTimedOut(now) || request.judgmentTimedOut(now)) return TrueshotPhase.FAILED;
         return request.getPhase();
     }
 }

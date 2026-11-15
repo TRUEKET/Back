@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -29,16 +30,20 @@ public class TrueshotPhotoService {
     private final TrueshotOriginalStore originals;
     private final HandAnalysisService hands;
     private final ObjectMapper json = new ObjectMapper();
+    private final java.time.Duration maxJudgmentWait;
 
     public TrueshotPhotoService(TrueshotRequestRepository requests, TrueshotPhotoRepository photos,
             TrueshotImageInput input, TrueshotFirstPhotoChecker firstChecker,
-            TrueshotOriginalStore originals, HandAnalysisService hands) {
+            TrueshotOriginalStore originals, HandAnalysisService hands,
+            @Value("${trueshot.judgment.max-wait:60s}") java.time.Duration maxJudgmentWait) {
         this.requests = requests;
         this.photos = photos;
         this.input = input;
         this.firstChecker = firstChecker;
         this.originals = originals;
         this.hands = hands;
+        if (maxJudgmentWait.isZero() || maxJudgmentWait.isNegative()) throw new IllegalArgumentException("판정 대기 시간은 양수여야 합니다.");
+        this.maxJudgmentWait=maxJudgmentWait;
     }
 
     @Transactional(noRollbackFor = ApiException.class)
@@ -124,8 +129,8 @@ public class TrueshotPhotoService {
         photo.storeOriginal(key);
         photo.storeHandAnalysis(json.valueToTree(analysis));
         photos.save(photo);
-        request.secondPhotoReceived(receivedAt);
-        return new TrueshotPhotoResponse(2, request.getPhase(), true, null, List.of(),TrueshotChecks.pendingSecond(),List.of());
+        request.secondPhotoReceived(receivedAt,maxJudgmentWait);
+        return new TrueshotPhotoResponse(2, request.getPhase(), true, request.getJudgmentDeadline(), List.of(),TrueshotChecks.pendingSecond(),List.of());
     }
 
     private String key(Long requestId) {

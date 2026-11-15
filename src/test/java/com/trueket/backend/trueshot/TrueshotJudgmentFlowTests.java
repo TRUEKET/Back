@@ -45,6 +45,7 @@ class TrueshotJudgmentFlowTests {
     @Autowired TrueshotPhotoRepository photos;
     @Autowired JdbcTemplate jdbc;
     @Autowired TrueshotExpiryJob expiry;
+    @Autowired TrueshotJudgmentService judgments;
     @MockitoBean TrueshotOriginalStore originals;
     @MockitoBean TrueshotMaskStorage storage;
     @MockitoBean TrueshotMaskDetector masks;
@@ -119,10 +120,13 @@ class TrueshotJudgmentFlowTests {
                 .andExpect(jsonPath("$.failReasons").isEmpty());
         assertNotNull(photos.findByRequestIdAndNumber(f.id(),(short)2).orElseThrow().getHandAnalysis());
         assertNull(requests.findById(f.id()).orElseThrow().getJudgedAt());
-        postSeller(f,"/judge",null).andExpect(status().isServiceUnavailable());
+        expiry.retryJudgments();
+        assertNull(requests.findById(f.id()).orElseThrow().getJudgedAt());
         doReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"",true)).when(screens).detect(any());
-        postSeller(f,"/judge",null).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PASSED"));
-        postSeller(f,"/judge",null).andExpect(status().isOk());
+        expiry.retryJudgments();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PASSED"));
+        expiry.retryJudgments();
         verify(originals,times(1)).upload(anyString(),any(),anyString());
         assertEquals(2,photos.findByRequestId(f.id()).size());
     }
@@ -133,8 +137,64 @@ class TrueshotJudgmentFlowTests {
         submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"));
         assertNotNull(requests.findById(f.id()).orElseThrow().getJudgmentResult());
         doReturn(new TrueshotMaskDetector.Detection(true,List.of(new Box(.1,.1,.1,.1)))).when(masks).detect(any());
-        postSeller(f,"/judge",null).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        expiry.retryJudgments();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
         verify(screens,times(1)).detect(any());
+    }
+
+    @Test void judgmentWaitExpiresForPollingAndWorkerWithoutAnotherModelCall() throws Exception {
+        var f=fixture(true);
+        when(screens.detect(any())).thenThrow(unavailable());
+        submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"))
+                .andExpect(jsonPath("$.deadline").isString());
+        var request=requests.findById(f.id()).orElseThrow();
+        assertEquals(60,java.time.Duration.between(request.getSecondReceivedAt(),request.getJudgmentDeadline()).getSeconds());
+        expireJudgmentDeadline(f);
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.failureCode").value("ANALYSIS_TIMEOUT"))
+                .andExpect(jsonPath("$.pollAfterMillis").isEmpty());
+        buyerDetail(f).andExpect(jsonPath("$.status").value("FAILED"));
+        expiry.retryJudgments();
+        var failed=requests.findById(f.id()).orElseThrow();
+        assertEquals("FAILED",failed.getStatus().name());
+        assertNotNull(failed.getJudgedAt());
+        assertFalse(failed.getJudgmentResult().path("passed").asBoolean());
+        assertTrue(photos.findByRequestId(f.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()==null));
+        verify(screens,times(1)).detect(any());
+    }
+
+    @Test void maskingOutageCannotKeepProvisionalPassPastDeadline() throws Exception {
+        var f=fixture(true);
+        when(masks.detect(any())).thenThrow(unavailable());
+        submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"));
+        assertTrue(requests.findById(f.id()).orElseThrow().getJudgmentResult().path("passed").asBoolean());
+        expireJudgmentDeadline(f);
+        expiry.retryJudgments();
+        var failed=requests.findById(f.id()).orElseThrow();
+        assertEquals("FAILED",failed.getStatus().name());
+        assertFalse(failed.getJudgmentResult().path("passed").asBoolean());
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(jsonPath("$.failureCode").value("ANALYSIS_TIMEOUT"))
+                .andExpect(jsonPath("$.checks[2].status").value("NOT_CHECKED"));
+        verify(screens,times(1)).detect(any());
+        verify(masks,times(1)).detect(any());
+    }
+
+    @Test void lateModelSuccessOrErrorReturnsTimeoutInsteadOfAnotherLoadingResponse() throws Exception {
+        for (boolean modelError:List.of(false,true)) {
+            var f=fixture(true);
+            doAnswer(call -> {
+                // 현재 판정 트랜잭션이 가진 마감 시각을 지나도록 만들어 늦게 도착한 응답을 검증한다.
+                expireJudgmentDeadline(f);
+                if (modelError) throw unavailable();
+                return new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"",true);
+            }).when(screens).detect(any());
+            submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("FAILED"))
+                    .andExpect(jsonPath("$.failReasons[0]").exists());
+            assertEquals("ANALYSIS_TIMEOUT",requests.findById(f.id()).orElseThrow().getJudgmentResult().path("failureCode").asText());
+        }
     }
 
     @Test void incompleteMaskAllowsResultOnlyAndNeverExposesOriginal() throws Exception {
@@ -207,8 +267,7 @@ class TrueshotJudgmentFlowTests {
             submit(f,data).andExpect(status().isBadRequest());
         }
         assertFalse(photos.existsByRequestIdAndNumber(f.id(),(short)2));
-        mvc.perform(post(f.path()+"/judge").session(f.buyer().session())
-                .header(f.buyer().csrf().getHeaderName(),f.buyer().csrf().getToken())).andExpect(status().isForbidden());
+        mvc.perform(get(f.path()+"/result").session(f.buyer().session())).andExpect(status().isForbidden());
         mvc.perform(post(f.path()+"/share").session(f.seller().session()).contentType("application/json")
                 .content("{\"sharePhotos\":true,\"boxes\":[]}")).andExpect(status().isForbidden());
         mvc.perform(multipart(f.path()+"/photo").file(photo()).param("n","2")
@@ -246,6 +305,13 @@ class TrueshotJudgmentFlowTests {
                 .header(buyer.csrf().getHeaderName(),buyer.csrf().getToken())).andExpect(status().isNotFound());
     }
 
+    @Test void manualJudgmentRouteHasBeenRemovedWithoutConsumingSubmission() throws Exception {
+        var f=fixture(true);
+        postSeller(f,"/judge",null).andExpect(status().isNotFound());
+        assertEquals("SECOND_WAITING",requests.findById(f.id()).orElseThrow().getPhase().name());
+        assertFalse(photos.existsByRequestIdAndNumber(f.id(),(short)2));
+    }
+
     @Test void noHandsOrUncertainScreenNeverPassesAndFailedDeletionCanBeRetried() throws Exception {
         var noHands=fixture(true);
         doThrow(unavailable()).when(deletion).deleteAll(anyList());
@@ -272,7 +338,9 @@ class TrueshotJudgmentFlowTests {
         when(screens.detect(any())).thenThrow(unavailable());
         submit(expired,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"));
         jdbc.update("update trueshot_requests set expires_at=? where id=?",OffsetDateTime.now().minusSeconds(1),expired.id());
-        postSeller(expired,"/judge",null).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"));
+        expiry.expireRequests();
+        mvc.perform(get(expired.path()+"/result").session(expired.seller().session())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"));
         assertTrue(photos.findByRequestId(expired.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()==null));
     }
 
@@ -299,15 +367,16 @@ class TrueshotJudgmentFlowTests {
         var pool=java.util.concurrent.Executors.newFixedThreadPool(2);
         var start=new java.util.concurrent.CountDownLatch(1);
         try {
-            java.util.concurrent.Callable<Integer> retry=() -> {
+            java.util.concurrent.Callable<Void> retry=() -> {
                 start.await();
-                return postSeller(f,"/judge",null).andReturn().getResponse().getStatus();
+                judgments.judgeById(f.id());
+                return null;
             };
             var one=pool.submit(retry);
             var two=pool.submit(retry);
             start.countDown();
-            assertEquals(200,one.get(15,java.util.concurrent.TimeUnit.SECONDS));
-            assertEquals(200,two.get(15,java.util.concurrent.TimeUnit.SECONDS));
+            one.get(15,java.util.concurrent.TimeUnit.SECONDS);
+            two.get(15,java.util.concurrent.TimeUnit.SECONDS);
         } finally { pool.shutdownNow(); }
         verify(screens,times(2)).detect(any());
         assertEquals("PASSED",requests.findById(f.id()).orElseThrow().getStatus().name());
@@ -335,6 +404,12 @@ class TrueshotJudgmentFlowTests {
     private String analysis(boolean match) {
         return "{\"imageWidth\":400,\"imageHeight\":400,\"hands\":[{\"x\":20,\"y\":200,\"gesture\":\""
                 +(match?"Victory":"Open_Palm")+"\",\"confidence\":0.96}]}";
+    }
+    private void expireJudgmentDeadline(Fixture f) {
+        var request=requests.findById(f.id()).orElseThrow();
+        ((com.fasterxml.jackson.databind.node.ObjectNode)request.getJudgmentResult())
+                .put("deadline",OffsetDateTime.now().minusSeconds(1).toString());
+        requests.save(request);
     }
     private MockMultipartFile photo() { return new MockMultipartFile("photo","photo.jpg","image/jpeg",image); }
     private ResultActions submit(Fixture f,String data) throws Exception {

@@ -66,7 +66,7 @@ class TrueshotChecksTests {
     private TrueshotRequest judging() {
         var request=request(); request.start(now); request.firstPhotoAccepted(now);
         request.revealSecondInstruction(SecondMission.of(SecondMission.Type.GESTURE,null),now);
-        request.secondPhotoReceived(now);
+        request.secondPhotoReceived(now,java.time.Duration.ofSeconds(60));
         return request;
     }
     private com.fasterxml.jackson.databind.JsonNode snapshot() {

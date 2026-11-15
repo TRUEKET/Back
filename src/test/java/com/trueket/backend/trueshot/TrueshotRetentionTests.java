@@ -212,7 +212,7 @@ class TrueshotRetentionTests {
         var request=TrueshotRequest.create(user,"보관 만료","AB12",UUID.randomUUID().toString(),createdAt);
         request.start(createdAt); request.firstPhotoAccepted(createdAt);
         request.revealSecondInstruction(SecondMission.of(SecondMission.Type.GESTURE,null),createdAt);
-        request.secondPhotoReceived(createdAt);
+        request.secondPhotoReceived(createdAt,java.time.Duration.ofSeconds(60));
         request.finishJudgment(true,true,List.of(),createdAt);
         request.finishSharing(true,createdAt);
         request=requests.save(request);

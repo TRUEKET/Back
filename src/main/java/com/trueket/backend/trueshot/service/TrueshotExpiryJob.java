@@ -67,13 +67,18 @@ public class TrueshotExpiryJob {
                 .forEach(request -> run(request.getId(), id -> service.expirePhoto(id, 1)));
         requests.findByPhaseAndDeadline2LessThanEqual(TrueshotPhase.SECOND_WAITING, now)
                 .forEach(request -> run(request.getId(), id -> service.expirePhoto(id, 2)));
-        requests.findByPhase(TrueshotPhase.JUDGING)
-                .forEach(request -> run(request.getId(), judgments::judgeById));
         // 삭제 API가 일시적으로 실패해도 다음 실행에서 임시 원본을 다시 정리한다.
         photos.findRequestIdsWithOriginalsByStatus(TrueshotStatus.FAILED)
                 .forEach(id -> run(id, service::cleanFinalOriginals));
         photos.findRequestIdsWithOriginalsByStatus(TrueshotStatus.PASSED)
                 .forEach(id -> run(id, service::cleanFinalOriginals));
+    }
+
+    // 판정 대기 재시도는 원본 정리·보관 만료 주기와 분리해 더 짧은 간격으로 실행한다.
+    @Scheduled(fixedDelayString="${trueshot.judgment.retry-delay-ms:10000}")
+    public void retryJudgments() {
+        requests.findByPhase(TrueshotPhase.JUDGING)
+                .forEach(request -> run(request.getId(), judgments::judgeById));
     }
 
     private void run(Long id, LongConsumer action) {
