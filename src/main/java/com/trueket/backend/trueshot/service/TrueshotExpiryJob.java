@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -25,13 +26,35 @@ public class TrueshotExpiryJob {
     private final TrueshotRequestService service;
     private final TrueshotPhotoRepository photos;
     private final TrueshotJudgmentService judgments;
+    private final TrueshotRetentionService retention;
 
     public TrueshotExpiryJob(TrueshotRequestRepository requests, TrueshotRequestService service,
-            TrueshotPhotoRepository photos, TrueshotJudgmentService judgments) {
+            TrueshotPhotoRepository photos, TrueshotJudgmentService judgments, TrueshotRetentionService retention) {
         this.requests = requests;
         this.service = service;
         this.photos = photos;
         this.judgments = judgments;
+        this.retention = retention;
+    }
+
+    // 보관 만료는 인증 성공·실패와 관계없이 적용한다. 키 기준으로 나누어 전체 행을 한꺼번에 읽지 않는다.
+    @Scheduled(fixedDelay = 60_000)
+    public void purgeExpiredRequests() {
+        OffsetDateTime cutoff=OffsetDateTime.now(ZoneOffset.UTC);
+        long afterId=0;
+        while (true) {
+            var ids=requests.findExpiredIds(cutoff,afterId,PageRequest.of(0,100));
+            if (ids.isEmpty()) return;
+            for (Long id:ids) {
+                try {
+                    retention.purge(id,cutoff);
+                } catch (RuntimeException e) {
+                    // 실패한 요청을 다음 주기에 다시 조회하되 이번 주기의 나머지 요청은 계속 처리한다.
+                    LOG.warn("트루샷 보관 만료 정리 재시도 필요: 요청 {}, 오류 {}",id,e.getClass().getSimpleName());
+                }
+            }
+            afterId=ids.get(ids.size()-1);
+        }
     }
 
     // 요청 기한이 지난 건을 서버에서 실패 또는 사진 미공유 완료로 확정한다.
