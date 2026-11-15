@@ -31,7 +31,8 @@ public class ReportEvidenceController {
             Authentication authentication,
             HttpServletRequest httpRequest,
             @RequestParam("analysisId") UUID analysisId,
-            @RequestParam("account") String account,
+            @RequestParam(value = "account", required = false) String account,
+            @RequestParam(value = "accountIndex", required = false) Integer accountIndex,
             @RequestPart("file") MultipartFile file
     ) {
         if (authentication == null || !authentication.isAuthenticated()) {
@@ -53,9 +54,10 @@ public class ReportEvidenceController {
         }
 
         ReportEvidenceResponse result =
-                reportEvidenceService.verify(
+                reportEvidenceService.verifySelected(
                         userId,
                         analysisId,
+                        accountIndex,
                         account,
                         file,
                         httpRequest.getSession(false)
