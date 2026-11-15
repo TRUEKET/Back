@@ -204,3 +204,22 @@ boolean suspicionAllowed = source.showSuspicionReport();
 - 정규화된 `KB:번호`는 내부 해시용 표현이며 모델의 accounts 출력 형식은 아니다. 미지원 은행·잘못된 형식은 기존처럼 조회 경고/등록 검증 대상이며 자동 추측하지 않는다.
 
 실제 OpenAI(gpt-6-luna) 호출에서 개인정보 없는 합성 캡처 두 장을 검증했다. 전체 계좌 사례는 국민·카카오 계좌 2개가 예상 번호와 정확히 일치했고 신고 공통 정규화에 통과했다(약 7.8초). 가림 계좌 및 은행 없는 번호 사례는 accounts가 비어 있었다(약 4.4초). 외부 DB·Storage·실제 송금 사진을 사용하지 않았다. 이 두 사례가 실제 사용자 사진의 OCR 정확도나 FRAUD/송금 증빙 전체 통합을 보장하지 않는다.
+
+## 화면용 마스킹과 RP-05 계좌 선택 (#55)
+
+판독 응답 identifiers의 ACCOUNT 값 `***1111`은 의도된 화면용 표시다. 서버 스냅샷 및 AnalysisReportSource.identifiers.accounts에는 전체 은행·계좌가 유지된다. 표시값으로 원문 비교를 하거나 뒷자리만으로 계좌를 매칭하지 않는다.
+
+POST /reports/evidence의 multipart 입력:
+
+- analysisId: 현재 브라우저에서 판독한 ID
+- accountIndex: 판독 응답 identifiers 중 type=ACCOUNT인 항목만 순서대로 나열했을 때의 0부터 시작하는 순번. 첫 계좌는 0. 서버가 소유권 확인한 스냅샷에서 원문을 선택한다.
+- file: 송금 증빙 사진
+- 세션 쿠키·CSRF 헤더 유지
+
+accountIndex와 account는 함께 보내지 않는다. 기존 전체 은행·계좌 문자열 account 방식은 호환 유지한다. account에 ***1111 같은 마스킹을 보내면 400과 선택 안내를 반환한다. 둘 다 생략하고 추출 계좌가 정확히 하나면 자동 선택하며, 0개 또는 여러 개면 선택을 요구한다. 잘못된 순번은 400, 송금 사진의 실제 수취 계좌 불일치는 기존 422다. 정상 선택 뒤에도 전체 은행+번호 일치와 송금 완료·가림 검증은 생략하지 않는다.
+
+RP-05의 evidenceToken을 받은 뒤 POST /reports에 analysisId, kind=FRAUD, evidenceToken을 전달한다. RP-04는 같은 스냅샷의 원문과 토큰의 계좌 해시를 사용한다. 계좌 원문을 판독 HTTP 응답에 추가하지 않았다.
+
+신한 111-111-1-111111 합성 캡처의 실제 AI 호출에서 문장에는 숫자를 읽고도 accounts가 비는 사례를 관찰했다. 반복/테스트 번호를 존재 여부 추측으로 누락하지 않도록 추출 지침을 추가한 뒤 같은 사례의 전체 번호 추출과 ***1111 마스킹을 확인했다. 별도 합성 송금 화면에서도 계좌는 일치했으나 실제 이체 아님 표기가 있는 화면은 transferCompleted=false였다. 이를 실제 송금 사진 검증 성공으로 간주하지 않는다.
+
+AnalysisFraudEvidenceFlowTests는 실제 HTTP 분석→증빙→FRAUD 생성, 가려진 표시값 거부, 잘못된 순번·계좌 거부, 재등록 거부를 검증한다. H2를 사용하고 AI·Storage·가림 개인정보 판정은 대체하며 이미지 검증·자르기와 계좌 비교·토큰·DB 저장은 실제 코드다. SMTP는 비활성화했다.

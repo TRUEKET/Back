@@ -41,6 +41,11 @@ public class ReportEvidenceService {
             MultipartFile file,
             HttpSession session
     ) {
+        return verifySelected(authenticatedUserId, analysisId, null, account, file, session);
+    }
+
+    public ReportEvidenceResponse verifySelected(Long authenticatedUserId, UUID analysisId,
+            Integer accountIndex, String account, MultipartFile file, HttpSession session) {
         // 1. 기존 JD 판독 세션 조회
         AnalysisReportSource source =
                 analysisReportSourceService.load(analysisId, session);
@@ -55,7 +60,8 @@ public class ReportEvidenceService {
         }
 
         // 3. 신고 대상 계좌 정규화
-        String targetAccount = normalizeAccount(account);
+        String selected = selectAccount(source, accountIndex, account);
+        String targetAccount = normalizeAccount(selected);
 
         // 4. JD가 추출한 계좌인지 확인
         var jdAccounts = source.identifiers().accounts();
@@ -146,6 +152,26 @@ public class ReportEvidenceService {
                 "송금 내역의 수취 계좌가 신고 대상과 일치합니다.",
                 evidenceToken
         );
+    }
+
+    private String selectAccount(AnalysisReportSource source, Integer index, String account) {
+        boolean hasAccount = account != null && !account.isBlank();
+        var accounts = source.identifiers().accounts();
+        if (index != null) {
+            if (hasAccount || index < 0 || index >= accounts.size()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "판독 결과에서 신고할 계좌를 다시 선택해 주세요.");
+            }
+            return accounts.get(index);
+        }
+        if (hasAccount) {
+            if (account.contains("*")) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "가려진 표시값으로 계좌를 비교할 수 없어요. account 대신 accountIndex로 선택해 주세요.");
+            }
+            return account;
+        }
+        if (accounts.size() == 1) return accounts.get(0);
+        throw new ApiException(HttpStatus.BAD_REQUEST, "판독 결과에서 신고할 계좌를 선택해 주세요.");
     }
 
     private String normalizeAccount(String raw) {
