@@ -1,5 +1,7 @@
 package com.trueket.backend.trueshot.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.util.List;
@@ -7,12 +9,18 @@ import java.util.List;
 public final class HandAnalysisDtos {
     private HandAnalysisDtos() {}
 
-    public record Input(@NotNull @Min(320) @Max(40000) Integer imageWidth,
-                        @NotNull @Min(320) @Max(40000) Integer imageHeight,
-                        @NotNull @Size(max = 10) List<@NotNull @Valid Hand> hands) {}
+    public record Input(
+            @Schema(description = "실제 업로드 이미지 너비(px), 320~40000", example = "1280") @NotNull @Min(320) @Max(40000) Integer imageWidth,
+            @Schema(description = "실제 업로드 이미지 높이(px), 320~40000", example = "720") @NotNull @Min(320) @Max(40000) Integer imageHeight,
+            @Schema(description = "손 인식 결과(최대 10개). 감지한 손이 없으면 빈 배열") @NotNull @Size(max = 10) List<@NotNull @Valid Hand> hands
+    ) {}
 
-    public record Hand(@NotNull Double x, @NotNull Double y,
-                       @NotBlank @Size(max = 64) String gesture, @NotNull Double confidence) {}
+    public record Hand(
+            @Schema(description = "업로드 이미지 기준 검지 끝 landmark 8의 x 좌표(px), 0~imageWidth", example = "640") @NotNull Double x,
+            @Schema(description = "업로드 이미지 기준 검지 끝 landmark 8의 y 좌표(px), 0~imageHeight", example = "360") @NotNull Double y,
+            @Schema(description = "손 동작: None, Closed_Fist, Open_Palm, Pointing_Up, Thumb_Down, Thumb_Up, Victory, ILoveYou", example = "Victory") @NotBlank @Size(max = 64) String gesture,
+            @Schema(description = "손 동작 인식 신뢰도(0~1)", example = "0.95") @NotNull Double confidence
+    ) {}
 
     public enum Status { ANALYZED, NO_HANDS, SCREEN_NOT_FOUND, SCREEN_UNCERTAIN }
     public enum Position { LEFT, RIGHT, OVERLAP, UNKNOWN }

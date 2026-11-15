@@ -10,9 +10,31 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingPart(
+            MissingServletRequestPartException exception
+    ) {
+        return ResponseEntity.badRequest().body(ApiResponse.error(
+                ErrorCode.INVALID_REQUEST.getCode(),
+                "필수 요청 파트가 누락되었습니다: " + exception.getRequestPartName()
+        ));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnsupportedMediaType(
+            HttpMediaTypeNotSupportedException exception
+    ) {
+        return ResponseEntity.status(415).body(ApiResponse.error(
+                ErrorCode.INVALID_REQUEST.getCode(),
+                "지원하지 않는 Content-Type입니다. API에 지정된 형식으로 전송해 주세요."
+        ));
+    }
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(

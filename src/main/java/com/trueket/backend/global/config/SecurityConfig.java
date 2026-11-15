@@ -49,6 +49,10 @@ public class SecurityConfig {
 
                 // 공개 API
                 .requestMatchers(
+                        "/swagger-ui.html",
+                        "/swagger-ui/**",
+                        "/v3/api-docs",
+                        "/v3/api-docs/**",
                         "/auth/**",
                         "/analyze",
                         "/analyze/**",
