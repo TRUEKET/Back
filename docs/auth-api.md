@@ -1,5 +1,7 @@
 # 가입·로그인 API
 
+처음 시연할 때는 [시연 순서](demo-guide.md), 오류 확인은 [실패 상황 점검](failure-checks.md)을 참고한다.
+
 ## Swagger에서 확인하기
 
 서버 실행 후 `http://localhost:8080/swagger-ui/index.html`을 열고 상단 정의에서 `accounts`를 선택한다.
