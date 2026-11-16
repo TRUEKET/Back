@@ -34,7 +34,8 @@ public final class TrueshotMaskDtos {
     ) {}
     public record SharePhotos(
             @Schema(description = "사진 공유 동의. false이면 boxes는 빈 배열이어야 함", example = "true") @NotNull Boolean sharePhotos,
-            @Schema(description = "추가 가림 영역 목록(최대 300개). 추가 가림이 없으면 빈 배열") @NotNull @Size(max=300) List<@NotNull @Valid Box> boxes
+            @Schema(description = "2차 사진의 자동 가림 위에 추가할 수동 가림 영역(0~1 비율, 최대 300개). 추가 가림이 없거나 공유를 거절하면 빈 배열",
+                    example = "[{\"x\":0.6,\"y\":0.6,\"width\":0.1,\"height\":0.1}]") @NotNull @Size(max=300) List<@NotNull @Valid Box> boxes
     ) {}
     public record SecondInstruction(
             @Schema(description = "두 번째 사진 촬영 안내. 미션 발급 전 null") String instruction2,

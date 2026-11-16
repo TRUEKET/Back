@@ -145,7 +145,7 @@ public class TrueshotSellerController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(judgments.sellerResult(token));
     }
 
-    @Operation(summary = "최종 결과 및 사진 공유 확정", description = "판매자가 인증 성공 후 사진 공유 동의 또는 거절을 선택할 때 호출합니다.")
+    @Operation(summary = "최종 결과 및 사진 공유 확정", description = "판매자가 2차 사진의 자동 가림 결과를 확인한 뒤 수동 가림 영역을 boxes로 전달하고 공유를 확정할 때 호출합니다. 추가 가림이 없으면 boxes=[], 공유하지 않으면 sharePhotos=false와 boxes=[]를 보냅니다.")
     @SecurityRequirement(name = "sessionAuth")
     @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true, schema = @Schema(type = "string"),
             description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
