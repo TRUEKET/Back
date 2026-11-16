@@ -81,10 +81,6 @@ public class TrueshotPhotoService {
             throw e;
         }
         OffsetDateTime checkedAt = OffsetDateTime.now(ZoneOffset.UTC);
-        if (request.isExpired(checkedAt)) {
-            request.failForRequestTimeout();
-            TrueshotTimeouts.check(request, OffsetDateTime.now(ZoneOffset.UTC));
-        }
         if (!result.passed()) {
             request.firstPhotoRejected(receivedAt, checkedAt);
             var checks=TrueshotChecks.first(result.clear(),result.codeVisible(),result.codeMatches());
@@ -102,6 +98,7 @@ public class TrueshotPhotoService {
         TrueshotPhoto photo = TrueshotPhoto.create(request, (short) 1, receivedAt);
         photo.storeOriginal(key);
         photos.save(photo);
+        // 제출 기한은 receivedAt으로 판단한다. 검사·저장 완료 시각으로 다시 거절하지 않는다.
         request.firstPhotoAccepted(checkedAt);
         return new TrueshotPhotoResponse(1, request.getPhase(), true, null, List.of(),
                 TrueshotChecks.first(true,true,true),List.of());

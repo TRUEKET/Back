@@ -11,6 +11,9 @@ import com.trueket.backend.trueshot.service.BookingScreenDetector;
 import com.trueket.backend.trueshot.dto.TrueshotMaskDtos.Box;
 import com.trueket.backend.user.entity.User;
 import com.trueket.backend.user.repository.UserRepository;
+import com.trueket.backend.trueshot.repository.TrueshotRequestRepository;
+import com.trueket.backend.trueshot.repository.TrueshotPhotoRepository;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,6 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -48,6 +52,8 @@ class TrueshotRequestApiTests {
     @Autowired UserRepository users;
     @Autowired JdbcTemplate jdbc;
     @Autowired TrueshotExpiryJob expiryJob;
+    @Autowired TrueshotRequestRepository requests;
+    @Autowired TrueshotPhotoRepository photos;
     @MockitoBean TrueshotFirstPhotoChecker checker;
     @MockitoBean TrueshotOriginalStore originals;
     @MockitoBean TrueshotMaskDetector maskDetector;
@@ -433,6 +439,71 @@ class TrueshotRequestApiTests {
         mvc.perform(get(path+"/preview/1").session(seller.session())).andExpect(status().isConflict());
         verify(maskDetector,org.mockito.Mockito.times(1)).detect(any());
     }
+
+    @Test
+    void firstPhotoReceivedInTimeRemainsAcceptedAfterAiOrStorageDelay() throws Exception {
+        for (boolean expireDuringAnalysis : List.of(true,false)) {
+            var f=startedRequest();
+            when(checker.check(anyString(),any())).thenAnswer(call -> {
+                if (expireDuringAnalysis) expireDuringProcessing(f.id());
+                return new TrueshotFirstPhotoChecker.Result(true,true,true);
+            });
+            doAnswer(call -> {
+                if (!expireDuringAnalysis) expireDuringProcessing(f.id());
+                return null;
+            }).when(originals).upload(anyString(),any(),anyString());
+            mvc.perform(multipart(f.path()+"/photo").file(photo()).param("n","1")
+                            .session(f.seller().session())
+                            .header(f.seller().csrf().getHeaderName(),f.seller().csrf().getToken()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.accepted").value(true))
+                    .andExpect(jsonPath("$.phase").value("FIRST_MASKING"));
+            var accepted=requests.findById(f.id()).orElseThrow();
+            assertEquals("FIRST_MASKING",accepted.getPhase().name());
+            assertNotNull(accepted.getFirstVerifiedAt());
+            assertNotNull(photos.findByRequestIdAndNumber(f.id(),(short)1).orElseThrow().getOriginalStorageKey());
+        }
+    }
+
+    private void expireDuringProcessing(long id) {
+        // 접수 검사가 끝난 뒤 AI 또는 저장소 처리 중 기한이 지난 상황을 재현한다.
+        var request=requests.findById(id).orElseThrow();
+        ReflectionTestUtils.setField(request,"expiresAt",OffsetDateTime.now().minusSeconds(1));
+    }
+
+    @Test
+    void firstPhotoReceivedInTimeCanFinishStorageAfterPhotoDeadline() throws Exception {
+        var f=startedRequest();
+        when(checker.check(anyString(),any())).thenReturn(new TrueshotFirstPhotoChecker.Result(true,true,true));
+        doAnswer(call -> {
+            var request=requests.findById(f.id()).orElseThrow();
+            ReflectionTestUtils.setField(request,"deadline1",OffsetDateTime.now().minusSeconds(1));
+            return null;
+        }).when(originals).upload(anyString(),any(),anyString());
+        mvc.perform(multipart(f.path()+"/photo").file(photo()).param("n","1")
+                        .session(f.seller().session())
+                        .header(f.seller().csrf().getHeaderName(),f.seller().csrf().getToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.accepted").value(true))
+                .andExpect(jsonPath("$.phase").value("FIRST_MASKING"));
+        assertNotNull(requests.findById(f.id()).orElseThrow().getFirstVerifiedAt());
+    }
+
+    private UploadFixture startedRequest() throws Exception {
+        var buyer=buyer();
+        var response=mvc.perform(post("/trueshot").session(buyer.session())
+                        .header(buyer.csrf().getHeaderName(),buyer.csrf().getToken())
+                        .contentType("application/json").content("{}"))
+                .andExpect(status().isCreated()).andReturn().getResponse();
+        var created=json.readTree(response.getContentAsString());
+        var seller=anonymous();
+        String path=created.path("sellerPath").asText();
+        mvc.perform(post(path+"/start").session(seller.session())
+                        .header(seller.csrf().getHeaderName(),seller.csrf().getToken())
+                        .contentType("application/json").content("{\"sellerConsented\":true}"))
+                .andExpect(status().isOk());
+        return new UploadFixture(created.path("id").asLong(),path,buyer,seller);
+    }
+
+    private record UploadFixture(long id,String path,Browser buyer,Browser seller) {}
 
     private Browser buyer() throws Exception {
         String unique = UUID.randomUUID().toString();
