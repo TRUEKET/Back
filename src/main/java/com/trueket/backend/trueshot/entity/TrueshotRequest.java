@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.trueket.backend.trueshot.entity.enums.TrueshotPhase;
 import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
+import com.trueket.backend.trueshot.entity.enums.TrueshotFailureCode;
 import com.trueket.backend.user.entity.User;
 import com.trueket.backend.trueshot.dto.SecondMission;
 import jakarta.persistence.Column;
@@ -228,6 +229,7 @@ public class TrueshotRequest {
         ArrayNode reasons = JsonNodeFactory.instance.arrayNode();
         reasons.add(startedAt == null ? "30분 안에 시작하지 않음" : "30분 안에 인증이 완료되지 않음");
         failReasons = reasons;
+        storeFailureCode(TrueshotFailureCode.REQUEST_TIMEOUT);
     }
 
     public void closeShareWindow() {
@@ -251,6 +253,42 @@ public class TrueshotRequest {
         failReasons = JsonNodeFactory.instance.arrayNode().add(number == 1
                 ? "첫 번째 사진이 시간 내에 전송되지 않음"
                 : "두 번째 사진이 시간 내에 전송되지 않음");
+        storeFailureCode(number == 1 ? TrueshotFailureCode.FIRST_PHOTO_TIMEOUT : TrueshotFailureCode.SECOND_PHOTO_TIMEOUT);
+    }
+
+    private void storeFailureCode(TrueshotFailureCode code) {
+        var snapshot = JsonNodeFactory.instance.objectNode();
+        if (judgmentResult!=null && judgmentResult.path("deadline").isTextual()) {
+            snapshot.put("deadline",judgmentResult.path("deadline").asText());
+        }
+        snapshot.put("passed", false);
+        snapshot.put("failureCode", code.name());
+        snapshot.set("failReasons", failReasons.deepCopy());
+        judgmentResult = snapshot;
+    }
+
+    public TrueshotFailureCode failureCode(OffsetDateTime now) {
+        if (status == TrueshotStatus.PASSED) return null;
+        if (status == TrueshotStatus.FAILED) {
+            if (judgmentResult != null && judgmentResult.path("failureCode").isTextual()) {
+                try { return TrueshotFailureCode.valueOf(judgmentResult.path("failureCode").asText()); }
+                catch (IllegalArgumentException ignored) { /* 이전 형식은 저장된 실패 사유로 복구한다. */ }
+            }
+            if (failReasons != null) {
+                for (JsonNode reason : failReasons) {
+                    if (reason.asText().equals("첫 번째 사진이 시간 내에 전송되지 않음")) return TrueshotFailureCode.FIRST_PHOTO_TIMEOUT;
+                    if (reason.asText().equals("두 번째 사진이 시간 내에 전송되지 않음")) return TrueshotFailureCode.SECOND_PHOTO_TIMEOUT;
+                    if (reason.asText().equals(ANALYSIS_TIMEOUT_REASON)) return TrueshotFailureCode.ANALYSIS_TIMEOUT;
+                    if (reason.asText().equals("30분 안에 시작하지 않음") || reason.asText().equals("30분 안에 인증이 완료되지 않음")) return TrueshotFailureCode.REQUEST_TIMEOUT;
+                }
+            }
+            return TrueshotFailureCode.VERIFICATION_FAILED;
+        }
+        if (isExpired(now)) return TrueshotFailureCode.REQUEST_TIMEOUT;
+        if (judgmentTimedOut(now)) return TrueshotFailureCode.ANALYSIS_TIMEOUT;
+        if (firstPhotoTimedOut(now)) return TrueshotFailureCode.FIRST_PHOTO_TIMEOUT;
+        if (secondPhotoTimedOut(now)) return TrueshotFailureCode.SECOND_PHOTO_TIMEOUT;
+        return null;
     }
 
     // 첫 번째 사진 확인 중에는 3분 제한 시간이 줄어들지 않는다.

@@ -46,6 +46,8 @@ class TrueshotJudgmentFlowTests {
     @Autowired JdbcTemplate jdbc;
     @Autowired TrueshotExpiryJob expiry;
     @Autowired TrueshotJudgmentService judgments;
+    @Autowired TrueshotMaskService masking;
+    @Autowired TrueshotMaskRenderer renderer;
     @MockitoBean TrueshotOriginalStore originals;
     @MockitoBean TrueshotMaskStorage storage;
     @MockitoBean TrueshotMaskDetector masks;
@@ -103,6 +105,99 @@ class TrueshotJudgmentFlowTests {
         assertTrue(sharedAt.isEqual(requests.findById(f.id()).orElseThrow().getPhotosSharedAt()));
         verify(screens,times(1)).detect(any());
         submit(f,analysis(true)).andExpect(status().isConflict());
+    }
+
+    @Test void secondPhotoManualMaskIsSavedAndServedToBuyerWithoutChangingFirstPhoto() throws Exception {
+        var source = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
+        var graphics = source.createGraphics();
+        graphics.setColor(java.awt.Color.WHITE);
+        graphics.fillRect(0, 0, 400, 400);
+        graphics.dispose();
+        var output = new ByteArrayOutputStream();
+        ImageIO.write(source, "jpg", output);
+        image = output.toByteArray();
+        byte[] automaticMask = renderer.render(image, List.of(new Box(.1, .1, .1, .1)));
+        Map<String, byte[]> stored = new HashMap<>();
+        when(storage.original(anyString())).thenReturn(image);
+        when(storage.masked(anyString())).thenAnswer(call -> stored.getOrDefault(call.getArgument(0), automaticMask));
+        doAnswer(call -> {
+            stored.put(call.getArgument(0), call.getArgument(1));
+            return null;
+        }).when(storage).saveMasked(anyString(), any());
+
+        var f = fixture(true);
+        submit(f, analysis(true)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        var second = photos.findByRequestIdAndNumber(f.id(), (short) 2).orElseThrow();
+        var automaticBoxes = second.getMaskBoxes().path("automatic").deepCopy();
+        BufferedImage before = ImageIO.read(new java.io.ByteArrayInputStream(stored.get(second.getMaskedImage())));
+        assertTrue(new java.awt.Color(before.getRGB(260, 260)).getRed() > 220);
+        buyerPhoto(f, 2, f.buyer()).andExpect(status().isNotFound());
+
+        String additional = "[{\"x\":0.6,\"y\":0.6,\"width\":0.1,\"height\":0.1}]";
+        share(f, true, additional).andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("COMPLETED"));
+        second = photos.findByRequestIdAndNumber(f.id(), (short) 2).orElseThrow();
+        assertEquals(.6, second.getMaskBoxes().path("seller").get(0).path("x").asDouble());
+        assertEquals(automaticBoxes, second.getMaskBoxes().path("automatic"));
+        byte[] shared = buyerPhoto(f, 2, f.buyer()).andExpect(status().isOk())
+                .andExpect(content().contentType("image/jpeg")).andReturn().getResponse().getContentAsByteArray();
+        assertArrayEquals(stored.get(second.getMaskedImage()), shared);
+        BufferedImage after = ImageIO.read(new java.io.ByteArrayInputStream(shared));
+        assertTrue(new java.awt.Color(after.getRGB(260, 260)).getRed() < 30, "수동 가림 영역이 검정이어야 한다");
+        assertTrue(new java.awt.Color(after.getRGB(60, 60)).getRed() < 30, "자동 가림 영역이 유지되어야 한다");
+        assertTrue(new java.awt.Color(after.getRGB(340, 340)).getRed() > 220, "선택하지 않은 영역은 유지되어야 한다");
+        byte[] first = buyerPhoto(f, 1, f.buyer()).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        assertArrayEquals(automaticMask, first, "2차 사진의 추가 가림이 첫 사진을 바꾸면 안 된다");
+
+        clearInvocations(storage);
+        share(f, true, additional).andExpect(status().isOk());
+        verify(storage, never()).saveMasked(anyString(), any());
+        assertArrayEquals(shared, buyerPhoto(f, 2, f.buyer()).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray());
+    }
+
+    @Test void invalidManualMasksDoNotChangeImageOrSharingState() throws Exception {
+        var f = fixture(true);
+        submit(f, analysis(true)).andExpect(status().isOk());
+        var before = photos.findByRequestIdAndNumber(f.id(), (short) 2).orElseThrow().getMaskBoxes().deepCopy();
+        clearInvocations(storage);
+        for (String boxes : List.of("null", "[null]", "[{\"x\":-0.1,\"y\":0,\"width\":0.1,\"height\":0.1}]",
+                "[{\"x\":0.9,\"y\":0,\"width\":0.2,\"height\":0.1}]",
+                "[{\"x\":0,\"y\":0,\"width\":0,\"height\":0.1}]",
+                json.writeValueAsString(Collections.nCopies(301, new Box(.1, .1, .1, .1))))) {
+            share(f, true, boxes).andExpect(status().isBadRequest());
+        }
+        // MVC 외부에서 호출해도 서비스 자체가 누락·과다·잘못된 좌표를 거부한다.
+        List<List<Box>> invalid = new ArrayList<>();
+        invalid.add(null);
+        invalid.add(Collections.singletonList(null));
+        invalid.add(Collections.nCopies(301, new Box(.1, .1, .1, .1)));
+        invalid.add(List.of(new Box(Double.NaN, 0, .1, .1)));
+        for (List<Box> boxes : invalid) {
+            var error = assertThrows(ApiException.class, () -> masking.share(f.path().substring(3),
+                    new com.trueket.backend.trueshot.dto.TrueshotMaskDtos.SharePhotos(true, boxes)));
+            assertEquals(HttpStatus.BAD_REQUEST, error.getStatus());
+        }
+        assertEquals(before, photos.findByRequestIdAndNumber(f.id(), (short) 2).orElseThrow().getMaskBoxes());
+        assertEquals("SHARE_WAITING", requests.findById(f.id()).orElseThrow().getPhase().name());
+        assertNull(requests.findById(f.id()).orElseThrow().getPhotosSharedAt());
+        verify(storage, never()).saveMasked(anyString(), any());
+        buyerPhoto(f, 2, f.buyer()).andExpect(status().isNotFound());
+    }
+
+    @Test void decliningSharingWithManualMaskIsRejectedWithoutSaving() throws Exception {
+        var f = fixture(true);
+        submit(f, analysis(true)).andExpect(status().isOk());
+        clearInvocations(storage);
+        share(f, false, "[{\"x\":0.6,\"y\":0.6,\"width\":0.1,\"height\":0.1}]")
+                .andExpect(status().isBadRequest());
+        assertEquals("SHARE_WAITING", requests.findById(f.id()).orElseThrow().getPhase().name());
+        assertNull(requests.findById(f.id()).orElseThrow().getPhotosSharedAt());
+        verify(storage, never()).saveMasked(anyString(), any());
+        share(f, false, "[]").andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("COMPLETED"));
+        buyerPhoto(f, 2, f.buyer()).andExpect(status().isNotFound());
     }
 
     @Test void missionMismatchStoresBuyerReasonsButSellerReceivesOnlySummary() throws Exception {
@@ -395,6 +490,22 @@ class TrueshotJudgmentFlowTests {
         verify(screens,times(2)).detect(any());
         assertEquals("PASSED",requests.findById(f.id()).orElseThrow().getStatus().name());
         assertEquals(2,photos.findByRequestId(f.id()).size());
+    }
+
+    @Test void workerExpiredSecondPhotoReturnsSameTimeoutForUploadAndRefresh() throws Exception {
+        var f=fixture(true);
+        jdbc.update("update trueshot_requests set deadline_2=? where id=?",OffsetDateTime.now().minusSeconds(1),f.id());
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.failureCode").value("SECOND_PHOTO_TIMEOUT"))
+                .andExpect(jsonPath("$.activeDeadline").isEmpty());
+        expiry.expireRequests();
+        submit(f,analysis(true)).andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("SECOND_PHOTO_TIMEOUT"));
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("FAILED"))
+                .andExpect(jsonPath("$.failureCode").value("SECOND_PHOTO_TIMEOUT"))
+                .andExpect(jsonPath("$.remainingMillis").isEmpty()).andExpect(jsonPath("$.pollAfterMillis").isEmpty());
+        assertFalse(photos.existsByRequestIdAndNumber(f.id(),(short)2));
     }
 
     private Fixture fixture(boolean firstMasked) throws Exception {

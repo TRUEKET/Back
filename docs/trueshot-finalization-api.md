@@ -61,6 +61,10 @@
 
 boxes는 두 번째 사진에 추가할 가림 영역이며 0~1 비율, 최대 300개다. 추가 영역이 없으면 빈 배열이다. 기존 자동 가림을 지울 수 없고 가린 사진 위에만 덧칠한다. 두 사진이 모두 READY일 때만 공유할 수 있다.
 
+2차 수동 가림은 별도 API 없이 이 공유 요청에서 저장한다. `preview/2`의 자동 가림 사진을 기준으로 추가 영역을 지정한 뒤 `sharePhotos:true`와 함께 보낸다. 원점은 사진 왼쪽 위이며, `x`, `width`는 사진 너비로, `y`, `height`는 사진 높이로 나눈 비율이다. 예를 들어 400×400 사진에서 (240, 240)부터 40×40 영역을 가리려면 `{"x":0.6,"y":0.6,"width":0.1,"height":0.1}`을 보낸다.
+
+서버는 2차 사진에만 불투명 가림을 덧칠하고 자동 가림 좌표와 추가 가림 좌표를 함께 보존한다. 이미지 밖 영역·0 크기·null·300개 초과 입력은 400으로 거부하며 공유를 확정하지 않는다. 공유 완료 후 구매자는 추가 가림까지 반영된 사진을 조회한다.
+
 공유 동의 후 photos_shared_at을 기록하고 COMPLETED로 전환한다. `sharePhotos:false, boxes:[]`면 공유 없이 COMPLETED로 전환한다. 완료 후 재전송은 기존 결정을 유지하며 파일·공유 시각을 변경하지 않는다. 추가 가림 저장 실패 시 동의를 기록하지 않으므로 재시도할 수 있다.
 
 공유 기한은 기존 요청의 expires_at(생성+30분)이다. 기한이 지나면 PASSED 결과는 유지하고 사진 공유는 차단한다. 최초 늦은 공유 시도는 410, 이후 완료된 요청 재전송은 기존 결과를 반환한다.
@@ -148,7 +152,7 @@ retryReasons는 첫 사진 재촬영 안내, failReasons는 해당 응답의 실
 ```text
 status, phase, judgedAt, photosSharedAt, canShare, message, checks, failReasons,
 judgmentDeadline, pollAfterMillis, failureCode, title, code, instruction2, mission2,
-expiresAt, deadline1, deadline2, serverTime, photos
+expiresAt, deadline1, deadline2, serverTime, photos, activeDeadline, remainingMillis
 ```
 
 | 필드 | 의미 |
@@ -158,6 +162,8 @@ expiresAt, deadline1, deadline2, serverTime, photos
 | expiresAt | 기존 전체 요청 마감 |
 | deadline1, deadline2 | 기존 사진별 촬영 마감. 시작 전인 단계의 마감은 null |
 | serverTime | 응답 생성 시 서버 시각. 클라이언트 시계 차이 보정에 사용 |
+| activeDeadline | 현재 단계의 마감. 촬영·판정 기한과 전체 요청 마감 중 빠른 값. 종료 상태는 null |
+| remainingMillis | serverTime부터 activeDeadline까지 남은 밀리초. 종료 상태는 null |
 | photos | 접수된 사진별 number, maskStatus, previewPath 목록 |
 
 FIRST_MASKING 단계의 복구 필드 예시:
@@ -194,3 +200,27 @@ photos에는 접수된 사진만 포함한다. maskStatus는 PENDING/READY/FAILE
 다른 브라우저·쿠키 삭제·세션 만료 시에는 token만으로 판매자 권한을 복구하지 않는다. 이전 브라우저 세션을 사용할 수 없으면 새 링크로 시작해야 한다. 같은 세션이라도 요청/촬영/분석 마감이 지났으면 기존 실패 상태를 보여주고 시간을 연장하지 않는다. 보관 만료로 요청이 삭제됐으면 404다.
 
 아직 제출하지 않은 사진과 서버에 저장하지 않은 브러시 작업은 복구하지 않는다.
+
+
+## 시간 초과·실패 화면 처리
+
+시간 초과 API 오류는 HTTP 410과 `{"code":"FIRST_PHOTO_TIMEOUT","message":"안내 문구"}` 형태로 반환한다. 작업 스케줄러가 먼저 실패 처리했더라도 같은 촬영 시간 초과 코드를 반환한다. GET result와 구매자 상세의 `failureCode`로도 원인을 확인할 수 있다.
+
+| code / failureCode | 의미 | 화면 처리 |
+| --- | --- | --- |
+| REQUEST_TIMEOUT | 전체 인증 링크 기한 만료 | 진행 중단 및 새 링크 요청 안내 |
+| FIRST_PHOTO_TIMEOUT | 첫 사진 제출 기한 만료 | 첫 촬영 종료 및 새 링크 요청 안내 |
+| SECOND_PHOTO_TIMEOUT | 두 번째 사진 제출 기한 만료 | 두 번째 촬영 종료 및 새 링크 요청 안내 |
+| ANALYSIS_TIMEOUT | 분석 대기 기한 만료 | 로딩·재조회 종료 및 새 링크 요청 안내 |
+| VERIFICATION_FAILED | 촬영 미션·화질 등 판정 실패 | failReasons·checks를 표시하고 새 링크 요청 안내 |
+| SHARE_TIMEOUT | 성공 후 사진 공유 기한 만료(API 오류 code) | 성공 결과는 유지하고 공유 화면 종료 |
+| SELLER_SESSION_REQUIRED | 시작한 판매자 세션이 아님(403 code) | 원래 브라우저 이용 또는 새 링크 요청 안내 |
+
+- 페이지 진입·새로고침 시 기존 세션으로 GET result를 호출하고 `phase`에 맞춰 화면을 복구한다. 새 타이머를 시작하기 위해 start나 first-mask/confirm을 다시 호출하지 않는다.
+- `/start`, `/first-mask/confirm`, 사진 제출 후에도 GET result로 최신 서버 시간과 현재 단계의 타이머를 동기화한다. 재촬영으로 첫 사진 기한이 갱신된 경우도 동일하다.
+- `remainingMillis`를 응답 수신 시점의 남은 시간으로 사용하고 이후 경과 시간만 차감한다. 서버의 `serverTime`·`activeDeadline`은 ISO 8601 절대 시각이며, 고정 3분·1분을 새로 부여하지 않는다. 시간의 최종 판정은 서버가 한다.
+- 남은 시간이 0이 되거나 탭을 다시 활성화하면 GET result로 서버 상태를 확인한다. COMPLETED·FAILED에서는 activeDeadline·remainingMillis·pollAfterMillis가 null이므로 타이머와 주기 조회를 종료한다.
+- 409 단계 오류는 GET result로 현재 단계를 다시 확인한다. 410은 같은 사진 전송을 반복하지 않고 안내 문구를 표시한다. GET result는 스케줄러 실행 전에도 기한이 지난 요청을 실패로 표시한다.
+- FAILED에서는 기존 링크를 재시작하지 않는다. 구매자가 POST /trueshot으로 새 요청을 만들고 새 sellerPath를 전달해야 한다. 판정 실패의 구체적인 내용은 failureCode의 일반 설명보다 failReasons와 checks를 우선 표시한다.
+
+촬영 시간 초과 코드는 기존 judgment_result JSON에 기록하며 DB 컬럼 추가는 없다. 이전 데이터처럼 코드가 없는 실패 기록은 저장된 실패 사유를 통해 복구한다. API 오류 code를 지정하지 않은 다른 기능의 기존 `{message}` 오류 응답은 유지한다.
