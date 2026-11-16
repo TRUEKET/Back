@@ -81,6 +81,7 @@ class WithdrawalFlowTests {
     @Autowired JdbcTemplate jdbc;
     @Autowired AnalysisSessionStore analyses;
     @Autowired WithdrawalRepository owned;
+    @Autowired PendingReportEvidenceRepository pending;
     @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
 
     @BeforeEach void prepare() {
@@ -127,6 +128,40 @@ class WithdrawalFlowTests {
                         + "values(?,?,1,?,'READY',CAST('[]' AS JSON),?,?)",
                 id,id,masked,original,now);
         return id;
+    }
+
+    private PendingReportEvidence pending(Account account, String key, boolean consumed) {
+        var row=PendingReportEvidence.create(account.user().getId(),UUID.randomUUID(),"synthetic-hash",key);
+        if(consumed) row.consume(OffsetDateTime.now());
+        return pending.saveAndFlush(row);
+    }
+
+    @Test void withdrawalDeletesPendingAndConsumedEvidenceOnlyForOwner() throws Exception {
+        var owner=account();var other=account();
+        var first=pending(owner,"pending/"+owner.user().getId()+"/first.png",false);
+        var consumed=pending(owner,"pending/"+owner.user().getId()+"/consumed.png",true);
+        var unrelated=pending(other,"pending/"+other.user().getId()+"/other.png",false);
+        withdraw(login(owner)).andExpect(status().isNoContent());
+        assertFalse(pending.existsById(first.getToken()));assertFalse(pending.existsById(consumed.getToken()));
+        assertTrue(pending.existsById(unrelated.getToken()));
+        assertEquals(2,DELETED.size());
+        assertTrue(DELETED.stream().allMatch(key->key.contains("/"+owner.user().getId()+"/")));
+    }
+
+    @Test void pendingStorageFailurePreservesTokenAndAccountForRetry() throws Exception {
+        var owner=account();var row=pending(owner,"pending/"+owner.user().getId()+"/retry.png",false);
+        var browser=login(owner);STATUS.set(503);
+        withdraw(browser).andExpect(status().isServiceUnavailable());
+        assertTrue(pending.existsById(row.getToken()));assertTrue(users.existsById(owner.user().getId()));
+        STATUS.set(200);withdraw(browser).andExpect(status().isNoContent());
+        assertFalse(pending.existsById(row.getToken()));
+    }
+
+    @Test void anotherUsersPendingFileReferenceBlocksDeletion() throws Exception {
+        var owner=account();var other=account();String key="pending/shared-test.png";
+        pending(owner,key,false);pending(other,key,false);
+        withdraw(login(owner)).andExpect(status().isConflict());
+        assertTrue(DELETED.isEmpty());assertTrue(users.existsById(owner.user().getId()));
     }
 
     @Test void deletesOwnedRowsAndFilesButPreservesOtherAccountsAndSharedIdentifiers() throws Exception {
