@@ -93,6 +93,7 @@ public class TrueshotMaskService {
             throw new ApiException(HttpStatus.GONE,"사진 공유 시간이 지났어요.");
         }
         requireSharing(request);
+        validateAdditionalBoxes(input.boxes());
         if (!input.sharePhotos()) {
             if (!input.boxes().isEmpty()) throw new ApiException(HttpStatus.BAD_REQUEST,"공유하지 않을 때는 가림 영역을 비워 주세요.");
             request.finishSharing(false,OffsetDateTime.now(ZoneOffset.UTC));
@@ -104,16 +105,7 @@ public class TrueshotMaskService {
                 || first.getMaskedImage()==null || second.getMaskedImage()==null) {
             throw new ApiException(HttpStatus.CONFLICT,"두 사진의 개인정보 가림을 완료하지 못했어요.");
         }
-        if (input.boxes().stream().anyMatch(box -> !box.valid())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST,"추가 가림 영역을 확인해 주세요.");
-        }
-        if (!input.boxes().isEmpty()) {
-            byte[] masked=renderer.render(storage.masked(second.getMaskedImage()),input.boxes());
-            storage.saveMasked(second.getMaskedImage(),masked);
-            var boxes=second.getMaskBoxes().deepCopy();
-            ((com.fasterxml.jackson.databind.node.ObjectNode)boxes).set("seller",json.valueToTree(input.boxes()));
-            second.maskingReady(second.getMaskedImage(),boxes);
-        }
+        applyAdditionalMask(second,input.boxes());
         if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
             request.closeShareWindow();
             throw new ApiException(HttpStatus.GONE,"사진 공유 시간이 지났어요.");
@@ -134,19 +126,12 @@ public class TrueshotMaskService {
     public SecondInstruction confirmFirst(String token,List<Box> additional) {
         TrueshotRequest request=locked(token);
         TrueshotPhoto photo=first(request);
-        if (additional==null || additional.size()>300 || additional.stream().anyMatch(box -> box==null || !box.valid())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST,"추가 가림 영역을 확인해 주세요.");
-        }
+        validateAdditionalBoxes(additional);
         if (photo.getMaskStatus()==MaskStatus.PENDING) {
             throw new ApiException(HttpStatus.CONFLICT,"자동 가림을 먼저 완료해 주세요.");
         }
         if (photo.getMaskStatus()==MaskStatus.READY && !additional.isEmpty()) {
-            // 원본이 아닌 자동 가림 사진 위에만 덧칠하므로 기존 가림을 지울 수 없다.
-            byte[] finalImage=renderer.render(storage.masked(photo.getMaskedImage()),additional);
-            storage.saveMasked(photo.getMaskedImage(),finalImage);
-            var boxes=photo.getMaskBoxes().deepCopy();
-            ((com.fasterxml.jackson.databind.node.ObjectNode)boxes).set("seller",json.valueToTree(additional));
-            photo.maskingReady(photo.getMaskedImage(),boxes);
+            applyAdditionalMask(photo,additional);
         }
         // 공개 직전의 서버 시각을 기준으로 1분을 부여한다. 전체 요청 기한은 그대로다.
         OffsetDateTime now=OffsetDateTime.now(ZoneOffset.UTC);
@@ -154,6 +139,22 @@ public class TrueshotMaskService {
         var mission=missions.generate();
         request.revealSecondInstruction(mission,now);
         return new SecondInstruction(request.getInstruction2(),mission,request.getDeadline2(),request.getExpiresAt());
+    }
+
+    private void validateAdditionalBoxes(List<Box> boxes) {
+        if (boxes==null || boxes.size()>300 || boxes.stream().anyMatch(box -> box==null || !box.valid())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,"추가 가림 영역을 확인해 주세요.");
+        }
+    }
+
+    private void applyAdditionalMask(TrueshotPhoto photo,List<Box> additional) {
+        if (additional.isEmpty()) return;
+        // 자동 가림된 사진 위에만 덧칠한다. 첫 사진과 두 번째 사진에 같은 규칙을 적용한다.
+        byte[] masked=renderer.render(storage.masked(photo.getMaskedImage()),additional);
+        storage.saveMasked(photo.getMaskedImage(),masked);
+        var boxes=photo.getMaskBoxes().deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode)boxes).set("seller",json.valueToTree(additional));
+        photo.maskingReady(photo.getMaskedImage(),boxes);
     }
 
     private TrueshotRequest locked(String token) {
