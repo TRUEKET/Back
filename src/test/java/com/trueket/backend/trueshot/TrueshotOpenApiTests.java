@@ -79,6 +79,10 @@ class TrueshotOpenApiTests {
                 .path("responses").path("200").path("content").path("image/jpeg").path("schema").path("format").asText());
         assertFalse(spec.path("components").path("schemas").path("CreateRequest").path("properties")
                 .path("title").path("description").asText().isBlank());
+        JsonNode recovery=spec.path("components").path("schemas").path("SellerResult").path("properties");
+        assertTrue(recovery.has("activeDeadline"));
+        assertTrue(recovery.has("remainingMillis"));
+        assertTrue(spec.path("components").path("schemas").path("RequestDetail").path("properties").has("failureCode"));
     }
 
     @Test

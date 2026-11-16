@@ -492,6 +492,22 @@ class TrueshotJudgmentFlowTests {
         assertEquals(2,photos.findByRequestId(f.id()).size());
     }
 
+    @Test void workerExpiredSecondPhotoReturnsSameTimeoutForUploadAndRefresh() throws Exception {
+        var f=fixture(true);
+        jdbc.update("update trueshot_requests set deadline_2=? where id=?",OffsetDateTime.now().minusSeconds(1),f.id());
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.failureCode").value("SECOND_PHOTO_TIMEOUT"))
+                .andExpect(jsonPath("$.activeDeadline").isEmpty());
+        expiry.expireRequests();
+        submit(f,analysis(true)).andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("SECOND_PHOTO_TIMEOUT"));
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("FAILED"))
+                .andExpect(jsonPath("$.failureCode").value("SECOND_PHOTO_TIMEOUT"))
+                .andExpect(jsonPath("$.remainingMillis").isEmpty()).andExpect(jsonPath("$.pollAfterMillis").isEmpty());
+        assertFalse(photos.existsByRequestIdAndNumber(f.id(),(short)2));
+    }
+
     private Fixture fixture(boolean firstMasked) throws Exception {
         var buyer=buyer();
         var now=OffsetDateTime.now();

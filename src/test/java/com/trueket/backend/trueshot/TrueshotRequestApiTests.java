@@ -285,9 +285,20 @@ class TrueshotRequestApiTests {
                 OffsetDateTime.now().minusSeconds(1), id);
         mvc.perform(multipart(path + "/photo").file(photo()).param("n", "1")
                         .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
-                .andExpect(status().isGone());
+                .andExpect(status().isGone()).andExpect(jsonPath("$.code").value("FIRST_PHOTO_TIMEOUT"));
         assertEquals("FAILED", jdbc.queryForObject(
                 "select status from trueshot_requests where id = ?", String.class, id));
+        expiryJob.expireRequests();
+        mvc.perform(multipart(path + "/photo").file(photo()).param("n", "1")
+                        .session(seller.session()).header(seller.csrf().getHeaderName(), seller.csrf().getToken()))
+                .andExpect(status().isGone()).andExpect(jsonPath("$.code").value("FIRST_PHOTO_TIMEOUT"));
+        mvc.perform(get(path + "/result").session(seller.session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.failureCode").value("FIRST_PHOTO_TIMEOUT"))
+                .andExpect(jsonPath("$.phase").value("FAILED"))
+                .andExpect(jsonPath("$.remainingMillis").isEmpty())
+                .andExpect(jsonPath("$.activeDeadline").isEmpty());
+        mvc.perform(get("/trueshot/{id}",id).session(buyer.session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.failureCode").value("FIRST_PHOTO_TIMEOUT"));
     }
 
     @Test
