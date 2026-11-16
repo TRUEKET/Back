@@ -20,6 +20,11 @@ public final class TrueshotDtos {
     private TrueshotDtos() {}
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
+    public record TrueshotError(
+            @Schema(description = "시간 초과 또는 세션 오류 코드", example = "FIRST_PHOTO_TIMEOUT") String code,
+            @Schema(description = "화면에 표시할 안내 문구", example = "첫 번째 사진 제출 시간이 지났어요. 구매자에게 새 링크를 요청해 주세요.") String message
+    ) {}
+
     public record CreateRequest(
             @Schema(description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용", example = "공연 티켓 인증") @Size(max = 20, message = "요청 제목은 20자 이하로 입력해 주세요")
             String title
@@ -63,7 +68,9 @@ public final class TrueshotDtos {
             @Schema(description = "인증 실패 사유 목록") List<String> failReasons,
             @Schema(description = "최종 판정 완료 시각. 판정 전 null") OffsetDateTime judgedAt,
             @Schema(description = "최종 판정 상세. 판정 전 null") Map<String,Object> judgmentResult,
-            @Schema(description = "조회 가능한 사진 정보 목록") List<PhotoLink> photos
+            @Schema(description = "조회 가능한 사진 정보 목록") List<PhotoLink> photos,
+            @Schema(description = "실패 코드. REQUEST_TIMEOUT, FIRST_PHOTO_TIMEOUT, SECOND_PHOTO_TIMEOUT, ANALYSIS_TIMEOUT, VERIFICATION_FAILED") String failureCode,
+            @Schema(description = "응답을 생성한 서버 시각") OffsetDateTime serverTime
     ) {
         public static RequestDetail from(TrueshotRequest request, OffsetDateTime now) {
             return from(request, now, List.of());
@@ -78,7 +85,8 @@ public final class TrueshotDtos {
                     request.getCreatedAt(), request.getExpiresAt(), request.getStartedAt(),
                     request.getDeadline1(), request.getDeadline2(), request.getPhotosSharedAt(), reasons,
                     request.getJudgedAt(), request.getJudgedAt()==null || request.getJudgmentResult()==null ? null : JSON.convertValue(request.getJudgmentResult(),
-                            new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {}), photos);
+                            new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {}), photos,
+                    request.failureCode(now)==null?null:request.failureCode(now).name(),now);
         }
     }
 
@@ -122,7 +130,7 @@ public final class TrueshotDtos {
             @Schema(description = "인증 실패 사유 목록") List<String> failReasons,
             @Schema(description = "최종 판정 제한 시각") OffsetDateTime judgmentDeadline,
             @Schema(description = "JUDGING 단계에서 결과 재조회 간격(ms). 그 외 null", example = "2000") Long pollAfterMillis,
-            @Schema(description = "실패 구분 코드. 분석 시간 초과 시 ANALYSIS_TIMEOUT") String failureCode,
+            @Schema(description = "실패 코드. REQUEST_TIMEOUT, FIRST_PHOTO_TIMEOUT, SECOND_PHOTO_TIMEOUT, ANALYSIS_TIMEOUT, VERIFICATION_FAILED") String failureCode,
             @Schema(description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용", example = "공연 티켓 인증") String title,
             @Schema(description = "사진에 함께 표시할 인증 코드") String code,
             @Schema(description = "두 번째 사진 촬영 안내. 미션 발급 전 null") String instruction2,
@@ -131,7 +139,9 @@ public final class TrueshotDtos {
             @Schema(description = "첫 번째 사진 제출 기한") OffsetDateTime deadline1,
             @Schema(description = "두 번째 사진 제출 기한. 미션 발급 전 null") OffsetDateTime deadline2,
             @Schema(description = "응답을 생성한 서버 시각") OffsetDateTime serverTime,
-            @Schema(description = "조회 가능한 사진 정보 목록") List<SellerPhoto> photos
+            @Schema(description = "조회 가능한 사진 정보 목록") List<SellerPhoto> photos,
+            @Schema(description = "현재 단계의 마감 시각. 촬영·판정 기한과 전체 요청 기한 중 빠른 시각이며 종료 상태는 null") OffsetDateTime activeDeadline,
+            @Schema(description = "서버 시각 기준 남은 시간(ms). 새로고침으로 초기화되지 않으며 종료 상태는 null") Long remainingMillis
     ) {
         public static SellerResult from(TrueshotRequest request, OffsetDateTime now, boolean masksReady) {
             return build(request,now,masksReady,List.of());
@@ -160,15 +170,28 @@ public final class TrueshotDtos {
                             ? "사진 분석이 지연되고 있어요. 자동으로 다시 확인 중입니다."
                     : "사진을 확인하고 있어요.";
             boolean finished=status==TrueshotStatus.PASSED || status==TrueshotStatus.FAILED;
-            String failureCode=request.judgmentTimedOut(now) && !request.isExpired(now)?"ANALYSIS_TIMEOUT"
-                    : request.getJudgmentResult()!=null && request.getJudgmentResult().path("failureCode").isTextual()
-                        ?request.getJudgmentResult().get("failureCode").asText():null;
+            var failure = request.failureCode(now);
+            String failureCode=failure==null?null:failure.name();
+            if (failure!=null && failure.isTimeout()) message=failure.message();
+            var activeDeadline=TrueshotDtos.activeDeadline(request,now);
+            Long remainingMillis=activeDeadline==null?null:Math.max(0L,java.time.Duration.between(now,activeDeadline).toMillis());
             return new SellerResult(status, phase, request.getJudgedAt(), request.getPhotosSharedAt(), canShare, message,
                     TrueshotChecks.result(request,finished),reasons,request.getJudgmentDeadline(),
                     phase==TrueshotPhase.JUDGING?2000L:null,failureCode,
                     request.getTitle(),request.getCode(),request.getInstruction2(),request.getMission2(),
-                    request.getExpiresAt(),request.getDeadline1(),request.getDeadline2(),now,photos);
+                    request.getExpiresAt(),request.getDeadline1(),request.getDeadline2(),now,photos,activeDeadline,remainingMillis);
         }
+    }
+
+    private static OffsetDateTime activeDeadline(TrueshotRequest request,OffsetDateTime now) {
+        OffsetDateTime stageDeadline=switch(effectivePhase(request,now)) {
+            case FIRST_CHECKING -> request.getDeadline1();
+            case SECOND_WAITING -> request.getDeadline2();
+            case JUDGING -> request.getJudgmentDeadline();
+            case WAITING, FIRST_MASKING, SHARE_WAITING -> request.getExpiresAt();
+            case COMPLETED, FAILED -> null;
+        };
+        return stageDeadline==null?null:stageDeadline.isBefore(request.getExpiresAt())?stageDeadline:request.getExpiresAt();
     }
 
     private static List<String> failureReasons(TrueshotRequest request,OffsetDateTime now) {

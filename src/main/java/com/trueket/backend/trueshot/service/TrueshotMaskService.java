@@ -74,7 +74,7 @@ public class TrueshotMaskService {
         TrueshotRequest request=requests.findByToken(token).orElseThrow(this::notFound);
         if (number!=1 && number!=2) throw notFound();
         var now=OffsetDateTime.now(ZoneOffset.UTC);
-        if (request.isExpired(now)) throw new ApiException(HttpStatus.GONE,"사진 확인 시간이 지났어요.");
+        TrueshotTimeouts.check(request,now);
         if (!request.canPreviewSellerPhoto(number,now)) {
             throw new ApiException(HttpStatus.CONFLICT,"가린 사진을 확인할 수 없는 단계예요.");
         }
@@ -90,7 +90,7 @@ public class TrueshotMaskService {
         if (request.getStatus()==TrueshotStatus.PASSED && request.getPhase()==TrueshotPhase.COMPLETED) return;
         if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
             request.closeShareWindow();
-            throw new ApiException(HttpStatus.GONE,"사진 공유 시간이 지났어요.");
+            throw new ApiException(HttpStatus.GONE,"SHARE_TIMEOUT","사진 공유 시간이 지났어요. 인증 결과만 확인할 수 있어요.");
         }
         requireSharing(request);
         validateAdditionalBoxes(input.boxes());
@@ -108,15 +108,16 @@ public class TrueshotMaskService {
         applyAdditionalMask(second,input.boxes());
         if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
             request.closeShareWindow();
-            throw new ApiException(HttpStatus.GONE,"사진 공유 시간이 지났어요.");
+            throw new ApiException(HttpStatus.GONE,"SHARE_TIMEOUT","사진 공유 시간이 지났어요. 인증 결과만 확인할 수 있어요.");
         }
         request.finishSharing(true,OffsetDateTime.now(ZoneOffset.UTC));
     }
 
     private void requireSharing(TrueshotRequest request) {
         if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
-            throw new ApiException(HttpStatus.GONE,"사진 공유 시간이 지났어요.");
+            throw new ApiException(HttpStatus.GONE,"SHARE_TIMEOUT","사진 공유 시간이 지났어요. 인증 결과만 확인할 수 있어요.");
         }
+        TrueshotTimeouts.check(request,OffsetDateTime.now(ZoneOffset.UTC));
         if (request.getStatus()!=TrueshotStatus.PASSED || request.getPhase()!=TrueshotPhase.SHARE_WAITING) {
             throw new ApiException(HttpStatus.CONFLICT,"사진 공유 단계가 아니에요.");
         }
@@ -162,9 +163,7 @@ public class TrueshotMaskService {
         requireMasking(request); return request;
     }
     private void requireMasking(TrueshotRequest request) {
-        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
-            throw new ApiException(HttpStatus.GONE,"이 링크는 시간이 지났어요. 구매자에게 새 링크를 요청해 주세요");
-        }
+        TrueshotTimeouts.check(request,OffsetDateTime.now(ZoneOffset.UTC));
         if (request.getPhase()!=TrueshotPhase.FIRST_MASKING) {
             throw new ApiException(HttpStatus.CONFLICT,"첫 사진 가림 단계가 아니에요.");
         }

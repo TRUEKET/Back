@@ -56,8 +56,7 @@ public class TrueshotPhotoService {
         OffsetDateTime receivedAt = OffsetDateTime.now(ZoneOffset.UTC);
         if (request.isExpired(receivedAt)) {
             request.failForRequestTimeout();
-            throw new ApiException(HttpStatus.GONE,
-                    "이 링크는 시간이 지났어요. 구매자에게 새 링크를 요청해 주세요");
+            TrueshotTimeouts.check(request, OffsetDateTime.now(ZoneOffset.UTC));
         }
         if (number == 1) return uploadFirst(request, receivedAt, file);
         return uploadSecond(request, receivedAt, file, analysis);
@@ -67,8 +66,9 @@ public class TrueshotPhotoService {
             OffsetDateTime receivedAt, MultipartFile file) {
         if (request.firstPhotoTimedOut(receivedAt)) {
             request.failForPhotoTimeout(1);
-            throw new ApiException(HttpStatus.GONE, "3분 안에 첫번째 사진이 오지 않았어요.");
+            TrueshotTimeouts.check(request, receivedAt);
         }
+        TrueshotTimeouts.check(request, receivedAt);
         if (request.getPhase() != TrueshotPhase.FIRST_CHECKING) {
             throw new ApiException(HttpStatus.CONFLICT, "첫번째 사진을 받을 수 없는 단계예요.");
         }
@@ -83,8 +83,7 @@ public class TrueshotPhotoService {
         OffsetDateTime checkedAt = OffsetDateTime.now(ZoneOffset.UTC);
         if (request.isExpired(checkedAt)) {
             request.failForRequestTimeout();
-            throw new ApiException(HttpStatus.GONE,
-                    "이 링크는 시간이 지났어요. 구매자에게 새 링크를 요청해 주세요");
+            TrueshotTimeouts.check(request, OffsetDateTime.now(ZoneOffset.UTC));
         }
         if (!result.passed()) {
             request.firstPhotoRejected(receivedAt, checkedAt);
@@ -112,8 +111,9 @@ public class TrueshotPhotoService {
             OffsetDateTime receivedAt, MultipartFile file, Input analysis) {
         if (request.secondPhotoTimedOut(receivedAt)) {
             request.failForPhotoTimeout(2);
-            throw new ApiException(HttpStatus.GONE, "1분 안에 두번째 인증 사진이 오지 않았어요.");
+            TrueshotTimeouts.check(request, receivedAt);
         }
+        TrueshotTimeouts.check(request, receivedAt);
         if (request.getPhase() != TrueshotPhase.SECOND_WAITING) {
             throw new ApiException(HttpStatus.CONFLICT, "두번째 사진을 받을 수 없는 단계예요.");
         }

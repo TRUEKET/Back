@@ -115,6 +115,7 @@ public class TrueshotRequestService {
         if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
             throw expiredLink();
         }
+        TrueshotTimeouts.check(request, OffsetDateTime.now(ZoneOffset.UTC));
         if (!request.canStart()) {
             throw usedLink();
         }
@@ -131,6 +132,7 @@ public class TrueshotRequestService {
             request.closeShareWindow();
             throw expiredLink();
         }
+        TrueshotTimeouts.check(request, OffsetDateTime.now(ZoneOffset.UTC));
         if (!request.canStart()) {
             throw usedLink();
         }
@@ -208,7 +210,7 @@ public class TrueshotRequestService {
     }
 
     private ApiException expiredLink() {
-        return new ApiException(HttpStatus.GONE, "이 링크는 시간이 지났어요. 구매자에게 새 링크를 요청해 주세요");
+        return new ApiException(HttpStatus.GONE, "REQUEST_TIMEOUT", "이 링크는 시간이 지났어요. 구매자에게 새 링크를 요청해 주세요");
     }
 
     private ApiException usedLink() {

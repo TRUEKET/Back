@@ -11,7 +11,11 @@ import java.util.Map;
 @RestControllerAdvice
 public class ApiExceptionHandler {
     @ExceptionHandler(ApiException.class)
-    ResponseEntity<?> handle(ApiException e) { return ResponseEntity.status(e.getStatus()).body(Map.of("message", e.getMessage())); }
+    ResponseEntity<?> handle(ApiException e) {
+        return ResponseEntity.status(e.getStatus()).body(e.getCode()==null
+                ? Map.of("message", e.getMessage())
+                : Map.of("code", e.getCode(), "message", e.getMessage()));
+    }
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<?> validation(MethodArgumentNotValidException e) {
         return ResponseEntity.badRequest().body(Map.of("message", e.getBindingResult().getFieldErrors().get(0).getDefaultMessage()));

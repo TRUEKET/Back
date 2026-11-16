@@ -53,7 +53,9 @@ public class TrueshotSellerController {
     @Operation(summary = "판매자 링크 조회", description = "판매자가 전달받은 링크로 처음 접속해 인증 시작 전 안내를 확인할 때 호출합니다.")
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "409", description = "이미 사용한 링크 또는 현재 단계에서 호출 불가", content = @Content)
-    @ApiResponse(responseCode = "410", description = "인증 또는 촬영·공유 기한 만료", content = @Content)
+    @ApiResponse(responseCode = "410", description = "시간 초과. code로 요청·촬영·분석·공유 기한 만료를 구분합니다.",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = com.trueket.backend.trueshot.dto.TrueshotDtos.TrueshotError.class)))
     @GetMapping
     public ResponseEntity<SellerLink> link(@Parameter(description = "구매자가 전달한 sellerPath의 토큰") @PathVariable String token) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.sellerLink(token));
@@ -65,7 +67,9 @@ public class TrueshotSellerController {
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "400", description = "요청 값 또는 사진·손 인식 데이터 오류", content = @Content)
     @ApiResponse(responseCode = "409", description = "이미 사용한 링크 또는 현재 단계에서 호출 불가", content = @Content)
-    @ApiResponse(responseCode = "410", description = "인증 또는 촬영·공유 기한 만료", content = @Content)
+    @ApiResponse(responseCode = "410", description = "시간 초과. code로 요청·촬영·분석·공유 기한 만료를 구분합니다.",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = com.trueket.backend.trueshot.dto.TrueshotDtos.TrueshotError.class)))
     @PostMapping("/start")
     public ResponseEntity<SellerStart> start(@Parameter(description = "구매자가 전달한 sellerPath의 토큰") @PathVariable String token,
                                              @Valid @RequestBody SellerStartRequest input, @Parameter(hidden = true) HttpServletRequest request) {
@@ -84,7 +88,9 @@ public class TrueshotSellerController {
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "400", description = "요청 값 또는 사진·손 인식 데이터 오류", content = @Content)
     @ApiResponse(responseCode = "409", description = "이미 사용한 링크 또는 현재 단계에서 호출 불가", content = @Content)
-    @ApiResponse(responseCode = "410", description = "인증 또는 촬영·공유 기한 만료", content = @Content)
+    @ApiResponse(responseCode = "410", description = "시간 초과. code로 요청·촬영·분석·공유 기한 만료를 구분합니다.",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = com.trueket.backend.trueshot.dto.TrueshotDtos.TrueshotError.class)))
     @ApiResponse(responseCode = "413", description = "사진 용량 제한 초과", content = @Content)
     @ApiResponse(responseCode = "503", description = "외부 분석 또는 저장 서비스 일시 장애", content = @Content)
     @ApiResponse(responseCode = "415", description = "multipart/form-data 또는 analysis 파트의 application/json 형식 오류", content = @Content)
@@ -116,7 +122,9 @@ public class TrueshotSellerController {
             description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "409", description = "이미 사용한 링크 또는 현재 단계에서 호출 불가", content = @Content)
-    @ApiResponse(responseCode = "410", description = "인증 또는 촬영·공유 기한 만료", content = @Content)
+    @ApiResponse(responseCode = "410", description = "시간 초과. code로 요청·촬영·분석·공유 기한 만료를 구분합니다.",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = com.trueket.backend.trueshot.dto.TrueshotDtos.TrueshotError.class)))
     @ApiResponse(responseCode = "413", description = "사진 용량 제한 초과", content = @Content)
     @ApiResponse(responseCode = "503", description = "외부 분석 또는 저장 서비스 일시 장애", content = @Content)
     @PostMapping("/mask")
@@ -129,14 +137,16 @@ public class TrueshotSellerController {
     @SecurityRequirement(name = "sessionAuth")
     @ApiResponse(responseCode = "200", description = "마스킹된 JPEG 사진", content = @Content(mediaType = "image/jpeg", schema = @Schema(type = "string", format = "binary")))
     @ApiResponse(responseCode = "409", description = "이미 사용한 링크 또는 현재 단계에서 호출 불가", content = @Content)
-    @ApiResponse(responseCode = "410", description = "인증 또는 촬영·공유 기한 만료", content = @Content)
+    @ApiResponse(responseCode = "410", description = "시간 초과. code로 요청·촬영·분석·공유 기한 만료를 구분합니다.",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = com.trueket.backend.trueshot.dto.TrueshotDtos.TrueshotError.class)))
     @GetMapping(value="/preview/{number}",produces=MediaType.IMAGE_JPEG_VALUE)
     public ResponseEntity<byte[]> preview(@Parameter(description = "구매자가 전달한 sellerPath의 토큰") @PathVariable String token,@Parameter(description = "사진 번호", schema = @Schema(allowableValues = {"1", "2"})) @PathVariable short number,@Parameter(hidden = true) HttpServletRequest request) {
         requireSeller(request,token);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(masks.preview(token,number));
     }
 
-    @Operation(summary = "인증 진행 상태 및 결과 조회", description = "판매자가 새로고침 후 진행 화면을 복구하거나 두 번째 사진의 판정 결과를 확인할 때 호출합니다. JUDGING이면 pollAfterMillis 간격으로 다시 조회합니다.")
+    @Operation(summary = "인증 진행 상태 및 결과 조회", description = "판매자가 새로고침 후 진행 화면을 복구하거나 판정 결과를 확인할 때 호출합니다. activeDeadline·remainingMillis로 타이머를 복구하고, JUDGING이면 pollAfterMillis 간격으로 조회합니다. COMPLETED·FAILED이면 타이머와 결과 재조회를 종료합니다.")
     @SecurityRequirement(name = "sessionAuth")
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @GetMapping("/result")
@@ -152,7 +162,9 @@ public class TrueshotSellerController {
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "400", description = "요청 값 또는 사진·손 인식 데이터 오류", content = @Content)
     @ApiResponse(responseCode = "409", description = "이미 사용한 링크 또는 현재 단계에서 호출 불가", content = @Content)
-    @ApiResponse(responseCode = "410", description = "인증 또는 촬영·공유 기한 만료", content = @Content)
+    @ApiResponse(responseCode = "410", description = "시간 초과. code로 요청·촬영·분석·공유 기한 만료를 구분합니다.",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = com.trueket.backend.trueshot.dto.TrueshotDtos.TrueshotError.class)))
     @ApiResponse(responseCode = "413", description = "사진 용량 제한 초과", content = @Content)
     @ApiResponse(responseCode = "503", description = "외부 분석 또는 저장 서비스 일시 장애", content = @Content)
     @PostMapping("/share")
@@ -170,7 +182,9 @@ public class TrueshotSellerController {
     @ApiResponse(responseCode = "200", description = "요청 처리 완료")
     @ApiResponse(responseCode = "400", description = "요청 값 또는 사진·손 인식 데이터 오류", content = @Content)
     @ApiResponse(responseCode = "409", description = "이미 사용한 링크 또는 현재 단계에서 호출 불가", content = @Content)
-    @ApiResponse(responseCode = "410", description = "인증 또는 촬영·공유 기한 만료", content = @Content)
+    @ApiResponse(responseCode = "410", description = "시간 초과. code로 요청·촬영·분석·공유 기한 만료를 구분합니다.",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = com.trueket.backend.trueshot.dto.TrueshotDtos.TrueshotError.class)))
     @ApiResponse(responseCode = "413", description = "사진 용량 제한 초과", content = @Content)
     @ApiResponse(responseCode = "503", description = "외부 분석 또는 저장 서비스 일시 장애", content = @Content)
     @PostMapping("/first-mask/confirm")
@@ -183,7 +197,7 @@ public class TrueshotSellerController {
     private void requireSeller(HttpServletRequest request,String token) {
         var session=request.getSession(false);
         if (session==null || !Boolean.TRUE.equals(session.getAttribute("trueshotSeller:"+token))) {
-            throw new ApiException(HttpStatus.FORBIDDEN,"인증을 시작한 브라우저에서 진행해 주세요.");
+            throw new ApiException(HttpStatus.FORBIDDEN,"SELLER_SESSION_REQUIRED","인증을 시작한 브라우저에서 진행해 주세요.");
         }
     }
 }
