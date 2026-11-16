@@ -35,6 +35,10 @@ dependencies {
 	testRuntimeOnly 'com.h2database:h2'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'io.zonky.test:embedded-postgres:2.2.2'
+	testImplementation enforcedPlatform('io.zonky.test.postgres:embedded-postgres-binaries-bom:17.11.0')
+	testRuntimeOnly 'io.zonky.test.postgres:embedded-postgres-binaries-darwin-arm64v8'
+	testRuntimeOnly 'io.zonky.test.postgres:embedded-postgres-binaries-linux-arm64v8'
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
 }
 

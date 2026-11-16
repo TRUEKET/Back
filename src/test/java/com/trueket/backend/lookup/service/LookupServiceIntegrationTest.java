@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
-class LookupServiceIntegrationTest {
+class LookupServiceIntegrationTest extends com.trueket.backend.support.PostgreSqlIntegrationSupport {
 
     @Autowired
     private EntityManager entityManager;

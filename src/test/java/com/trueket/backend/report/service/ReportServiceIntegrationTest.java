@@ -9,20 +9,19 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.test.context.transaction.TestTransaction;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.UUID;
-import java.util.NoSuchElementException;
 
 import static org.assertj.core.api.Assertions.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
-class ReportServiceIntegrationTest {
+class ReportServiceIntegrationTest extends com.trueket.backend.support.PostgreSqlIntegrationSupport {
 
     @Autowired
     private ReportService reportService;
@@ -35,6 +34,21 @@ class ReportServiceIntegrationTest {
 
     @Autowired
     private TransactionTemplate transactionTemplate;
+
+    @MockitoBean
+    private SupabaseReportEvidenceStore storage;
+
+    @BeforeEach
+    void createAuditTable() {
+        // This table is normally installed by the team's DB schema, not a JPA entity.
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS public.dispute_deleted_records (
+                dispute_id bigint NOT NULL, report_id bigint NOT NULL,
+                decided_at timestamptz NOT NULL,
+                PRIMARY KEY (dispute_id, report_id)
+            )
+            """);
+    }
 
     // 테스트용 사용자 생성
     private Long createUser() {
@@ -299,6 +313,8 @@ class ReportServiceIntegrationTest {
                 description,
                 seller_email,
                 proof_images,
+                status,
+                target_report_ids,
                 created_at
             )
             VALUES (
@@ -306,6 +322,8 @@ class ReportServiceIntegrationTest {
                 'NORMAL',
                 '통합 테스트용 이의제기',
                 'seller@example.com',
+                CAST('[]' AS jsonb),
+                'DELIVERED',
                 CAST('[]' AS jsonb),
                 NOW()
             )
@@ -422,18 +440,29 @@ class ReportServiceIntegrationTest {
         Long reportId = ids[1];
         Long identifierId = ids[2];
 
+        jdbcTemplate.execute("""
+            CREATE TABLE report_delete_blocker (
+                report_id bigint PRIMARY KEY REFERENCES reports(id)
+            )
+            """);
         try {
-            // 2. 삭제를 막는 임시 DB 제약 조건 설정
-            // 이 부분은 별도 DB 전용 트리거 등을 사용해 구성해야 함
-
-            // 3. 삭제 실행
-            // reportService.deleteMyReport(userId, reportId);
-
-            // 4. 예외 발생 및 롤백 확인
-
+            jdbcTemplate.update("INSERT INTO report_delete_blocker(report_id) VALUES (?)", reportId);
+            // A real FK violation at flush/commit must roll back earlier child deletes.
+            assertThatThrownBy(() -> reportService.deleteMyReport(userId, reportId))
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+            assertThat(countById("reports", reportId)).isEqualTo(1);
+            assertThat(countByReportId("evidence", reportId)).isEqualTo(1);
+            assertThat(countByReportId("report_identifiers", reportId)).isEqualTo(1);
+            assertThat(countById("identifiers", identifierId)).isEqualTo(1);
         } finally {
-            // 5. 테스트 데이터 정리
-            // 테스트 전용 데이터만 삭제
+            jdbcTemplate.execute("DROP TABLE report_delete_blocker");
+            transactionTemplate.execute(status -> {
+                reportService.deleteMyReport(userId, reportId);
+                entityManager.flush();
+                jdbcTemplate.update("DELETE FROM identifiers WHERE id = ?", identifierId);
+                jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
+                return null;
+            });
         }
     }
 }
