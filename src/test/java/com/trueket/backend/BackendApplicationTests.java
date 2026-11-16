@@ -7,7 +7,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest
 @ActiveProfiles("test")
-class BackendApplicationTests {
+class BackendApplicationTests extends com.trueket.backend.support.PostgreSqlIntegrationSupport {
 
 	@Test
 	void contextLoads() {
