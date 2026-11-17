@@ -6,11 +6,16 @@ import com.trueket.backend.user.repository.UserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import java.util.List;
 
 @Configuration
 public class SecurityConfig {
@@ -32,6 +37,8 @@ public class SecurityConfig {
                 new ActiveUserFilter(users),
                 AuthorizationFilter.class
         );
+
+        http.cors(Customizer.withDefaults());
 
         // 공개 이의제기 접수 API만 CSRF 검사 제외
         http.csrf(csrf -> csrf
@@ -65,7 +72,9 @@ public class SecurityConfig {
                 // 이의제기 가능 여부 조회
                 .requestMatchers(
                         HttpMethod.GET,
-                        "/disputes/availability"
+                        "/disputes/availability",
+                        "/actuator/health",
+                        "/actuator/health/**"
                 ).permitAll()
 
                 // 판매자 이의제기 접수 - 로그인 불필요
@@ -98,5 +107,32 @@ public class SecurityConfig {
         );
 
         return http.build();
+    }
+
+    @Bean
+    CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+
+        config.setAllowedOrigins(List.of(
+                "https://trueket.vercel.app"
+        ));
+
+        config.setAllowedMethods(List.of(
+                "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+        ));
+
+        config.setAllowedHeaders(List.of(
+                "Content-Type",
+                "X-XSRF-TOKEN",
+                "X-CSRF-TOKEN"
+        ));
+
+        config.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 }

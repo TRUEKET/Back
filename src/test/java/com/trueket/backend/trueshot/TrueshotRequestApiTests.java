@@ -371,10 +371,15 @@ class TrueshotRequestApiTests {
                     .andExpect(jsonPath("$.serverTime").isString())
                     .andExpect(jsonPath("$.photos").isEmpty()).andReturn();
             var restored=json.readTree(refreshed.getResponse().getContentAsString());
-            assertTrue(OffsetDateTime.parse(start.get("deadline1").asText())
-                    .isEqual(OffsetDateTime.parse(restored.get("deadline1").asText())));
-            assertTrue(OffsetDateTime.parse(start.get("expiresAt").asText())
-                    .isEqual(OffsetDateTime.parse(restored.get("expiresAt").asText())));
+            assertEquals(
+                    OffsetDateTime.parse(start.get("deadline1").asText()).toInstant(),
+                    OffsetDateTime.parse(restored.get("deadline1").asText()).toInstant()
+            );
+
+            assertEquals(
+                    OffsetDateTime.parse(start.get("expiresAt").asText()).toInstant(),
+                    OffsetDateTime.parse(restored.get("expiresAt").asText()).toInstant()
+            );
         }
         mvc.perform(get(path+"/result")).andExpect(status().isForbidden());
         mvc.perform(get(path+"/result").session(buyer.session())).andExpect(status().isForbidden());
@@ -433,8 +438,10 @@ class TrueshotRequestApiTests {
                     .andExpect(jsonPath("$.photos[0].previewPath").isEmpty()).andReturn();
             var restored=json.readTree(refreshed.getResponse().getContentAsString());
             assertEquals(instruction.get("mission2"),restored.get("mission2"));
-            assertTrue(OffsetDateTime.parse(instruction.get("deadline2").asText())
-                    .isEqual(OffsetDateTime.parse(restored.get("deadline2").asText())));
+            assertEquals(
+                    OffsetDateTime.parse(instruction.get("deadline2").asText()).toInstant(),
+                    OffsetDateTime.parse(restored.get("deadline2").asText()).toInstant()
+            );
         }
         mvc.perform(get(path+"/preview/1").session(seller.session())).andExpect(status().isConflict());
         verify(maskDetector,org.mockito.Mockito.times(1)).detect(any());

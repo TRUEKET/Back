@@ -26,6 +26,7 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 
 @Entity
 @Table(name = "trueshot_requests")
@@ -303,14 +304,25 @@ public class TrueshotRequest {
         phase = TrueshotPhase.FIRST_MASKING;
     }
 
-    public void secondPhotoReceived(OffsetDateTime receivedAt,Duration maxWait) {
-        if (phase != TrueshotPhase.SECOND_WAITING) throw new IllegalStateException("두 번째 촬영 단계가 아닙니다.");
-        if (maxWait.isZero() || maxWait.isNegative()) throw new IllegalArgumentException("판정 대기 시간은 양수여야 합니다.");
-        secondReceivedAt = receivedAt;
+    public void secondPhotoReceived(OffsetDateTime receivedAt, Duration maxWait) {
+        if (phase != TrueshotPhase.SECOND_WAITING)
+            throw new IllegalStateException("두 번째 촬영 단계가 아닙니다.");
+
+        if (maxWait.isZero() || maxWait.isNegative())
+            throw new IllegalArgumentException("판정 대기 시간은 양수여야 합니다.");
+
+        // DB 저장 정밀도와 일치하도록 마이크로초 단위로 통일
+        secondReceivedAt = receivedAt.truncatedTo(ChronoUnit.MICROS);
         phase = TrueshotPhase.JUDGING;
-        var deadline=receivedAt.plus(maxWait);
-        if (expiresAt.isBefore(deadline)) deadline=expiresAt;
-        judgmentResult=JsonNodeFactory.instance.objectNode().put("deadline",deadline.toString());
+
+        // 정밀도가 통일된 시간을 기준으로 판정 마감 시간 계산
+        var deadline = secondReceivedAt.plus(maxWait);
+
+        if (expiresAt.isBefore(deadline))
+            deadline = expiresAt;
+
+        judgmentResult = JsonNodeFactory.instance.objectNode()
+                .put("deadline", deadline.toString());
     }
 
     public void revealSecondInstruction(SecondMission mission, OffsetDateTime now) {
