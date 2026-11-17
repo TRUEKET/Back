@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Service
@@ -44,7 +45,8 @@ public class TrueshotMaskService {
         }
         var photo=photos.findByRequestIdAndNumber(request.getId(),(short)2).orElseThrow(this::notFound);
         preparePhoto(photo, () -> {
-            if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+            if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC)
+                    .truncatedTo(ChronoUnit.MICROS))) {
                 throw new ApiException(HttpStatus.GONE,"요청 시간이 지났어요.");
             }
         });
@@ -73,7 +75,8 @@ public class TrueshotMaskService {
     public byte[] preview(String token,short number) {
         TrueshotRequest request=requests.findByToken(token).orElseThrow(this::notFound);
         if (number!=1 && number!=2) throw notFound();
-        var now=OffsetDateTime.now(ZoneOffset.UTC);
+        var now=OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS);
         TrueshotTimeouts.check(request,now);
         if (!request.canPreviewSellerPhoto(number,now)) {
             throw new ApiException(HttpStatus.CONFLICT,"가린 사진을 확인할 수 없는 단계예요.");
@@ -88,7 +91,8 @@ public class TrueshotMaskService {
         var request=requests.findByTokenForUpdate(token).orElseThrow(this::notFound);
         // 완료한 공유 요청의 재전송은 파일을 수정하거나 공유 시각을 갱신하지 않는다.
         if (request.getStatus()==TrueshotStatus.PASSED && request.getPhase()==TrueshotPhase.COMPLETED) return;
-        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS))) {
             request.closeShareWindow();
             throw new ApiException(HttpStatus.GONE,"SHARE_TIMEOUT","사진 공유 시간이 지났어요. 인증 결과만 확인할 수 있어요.");
         }
@@ -96,7 +100,8 @@ public class TrueshotMaskService {
         validateAdditionalBoxes(input.boxes());
         if (!input.sharePhotos()) {
             if (!input.boxes().isEmpty()) throw new ApiException(HttpStatus.BAD_REQUEST,"공유하지 않을 때는 가림 영역을 비워 주세요.");
-            request.finishSharing(false,OffsetDateTime.now(ZoneOffset.UTC));
+            request.finishSharing(false,OffsetDateTime.now(ZoneOffset.UTC)
+                    .truncatedTo(ChronoUnit.MICROS));
             return;
         }
         var first=first(request);
@@ -106,18 +111,22 @@ public class TrueshotMaskService {
             throw new ApiException(HttpStatus.CONFLICT,"두 사진의 개인정보 가림을 완료하지 못했어요.");
         }
         applyAdditionalMask(second,input.boxes());
-        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS))) {
             request.closeShareWindow();
             throw new ApiException(HttpStatus.GONE,"SHARE_TIMEOUT","사진 공유 시간이 지났어요. 인증 결과만 확인할 수 있어요.");
         }
-        request.finishSharing(true,OffsetDateTime.now(ZoneOffset.UTC));
+        request.finishSharing(true,OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS));
     }
 
     private void requireSharing(TrueshotRequest request) {
-        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS))) {
             throw new ApiException(HttpStatus.GONE,"SHARE_TIMEOUT","사진 공유 시간이 지났어요. 인증 결과만 확인할 수 있어요.");
         }
-        TrueshotTimeouts.check(request,OffsetDateTime.now(ZoneOffset.UTC));
+        TrueshotTimeouts.check(request,OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS));
         if (request.getStatus()!=TrueshotStatus.PASSED || request.getPhase()!=TrueshotPhase.SHARE_WAITING) {
             throw new ApiException(HttpStatus.CONFLICT,"사진 공유 단계가 아니에요.");
         }
@@ -135,7 +144,8 @@ public class TrueshotMaskService {
             applyAdditionalMask(photo,additional);
         }
         // 공개 직전의 서버 시각을 기준으로 1분을 부여한다. 전체 요청 기한은 그대로다.
-        OffsetDateTime now=OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now=OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS);
         requireMasking(request);
         var mission=missions.generate();
         request.revealSecondInstruction(mission,now);
@@ -163,7 +173,8 @@ public class TrueshotMaskService {
         requireMasking(request); return request;
     }
     private void requireMasking(TrueshotRequest request) {
-        TrueshotTimeouts.check(request,OffsetDateTime.now(ZoneOffset.UTC));
+        TrueshotTimeouts.check(request,OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS));
         if (request.getPhase()!=TrueshotPhase.FIRST_MASKING) {
             throw new ApiException(HttpStatus.CONFLICT,"첫 사진 가림 단계가 아니에요.");
         }

@@ -114,7 +114,7 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
 
         config.setAllowedOrigins(List.of(
-                "https://trueket.vercel.app/"
+                "https://trueket.vercel.app"
         ));
 
         config.setAllowedMethods(List.of(

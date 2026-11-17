@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
 
@@ -50,7 +51,8 @@ public class TrueshotRequestService {
         User user = users.findForUpdateById(userId)
                 .filter(found -> "ACTIVE".equals(found.getStatus()))
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."));
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS);
         String normalizedTitle = title == null ? "" : title.strip();
         if (normalizedTitle.isEmpty()) normalizedTitle = "요청 " + (requests.countByUserId(userId) + 1);
         TrueshotRequest request = TrueshotRequest.create(user, normalizedTitle, code(), token(), now);
@@ -60,7 +62,8 @@ public class TrueshotRequestService {
     @Transactional(readOnly = true)
     public List<RequestSummary> list(Long userId) {
         activeUser(userId);
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS);
         return requests.findByUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(request -> RequestSummary.from(request, now)).toList();
     }
@@ -70,7 +73,8 @@ public class TrueshotRequestService {
         activeUser(userId);
         TrueshotRequest request = requests.findByIdAndUserId(requestId, userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "트루샷 요청을 찾을 수 없어요."));
-        var now=OffsetDateTime.now(ZoneOffset.UTC);
+        var now=OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS);
         var links=request.getStatus()==TrueshotStatus.PASSED && request.getPhotosSharedAt()!=null && now.isBefore(request.getPurgeAt())
                 ? photos.findByRequestId(requestId).stream()
                     .filter(photo -> photo.getMaskStatus()==MaskStatus.READY && photo.getMaskedImage()!=null)
@@ -86,7 +90,8 @@ public class TrueshotRequestService {
         var request=requests.findByIdAndUserId(requestId,userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,"사진을 찾을 수 없어요."));
         if (request.getStatus()!=TrueshotStatus.PASSED || request.getPhotosSharedAt()==null
-                || !OffsetDateTime.now(ZoneOffset.UTC).isBefore(request.getPurgeAt())) {
+                || !OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS).isBefore(request.getPurgeAt())) {
             throw new ApiException(HttpStatus.NOT_FOUND,"공유된 사진을 찾을 수 없어요.");
         }
         var photo=photos.findByRequestIdAndNumber(requestId,number)
@@ -112,10 +117,12 @@ public class TrueshotRequestService {
     public SellerLink sellerLink(String token) {
         TrueshotRequest request = requests.findByToken(token)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "트루샷 링크를 찾을 수 없어요."));
-        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (request.isExpired(OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS))) {
             throw expiredLink();
         }
-        TrueshotTimeouts.check(request, OffsetDateTime.now(ZoneOffset.UTC));
+        TrueshotTimeouts.check(request, OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS));
         if (!request.canStart()) {
             throw usedLink();
         }
@@ -126,13 +133,15 @@ public class TrueshotRequestService {
     public SellerStart start(String token) {
         TrueshotRequest request = requests.findByTokenForUpdate(token)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "트루샷 링크를 찾을 수 없어요."));
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS);
         if (request.isExpired(now)) {
             request.failForRequestTimeout();
             request.closeShareWindow();
             throw expiredLink();
         }
-        TrueshotTimeouts.check(request, OffsetDateTime.now(ZoneOffset.UTC));
+        TrueshotTimeouts.check(request, OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS));
         if (!request.canStart()) {
             throw usedLink();
         }
@@ -144,7 +153,8 @@ public class TrueshotRequestService {
     @Transactional
     public void expire(Long requestId) {
         TrueshotRequest request = requests.findByIdForUpdate(requestId).orElse(null);
-        if (request == null || !request.isExpired(OffsetDateTime.now(ZoneOffset.UTC))) {
+        if (request == null || !request.isExpired(OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS))) {
             return;
         }
         request.failForRequestTimeout();
@@ -158,7 +168,8 @@ public class TrueshotRequestService {
     public void expirePhoto(Long requestId, int number) {
         TrueshotRequest request = requests.findByIdForUpdate(requestId).orElse(null);
         if (request == null) return;
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS);
         if (request.isExpired(now)) {
             request.failForRequestTimeout();
         } else if (number == 1 && request.firstPhotoTimedOut(now)) {
@@ -186,7 +197,8 @@ public class TrueshotRequestService {
         storageDeletion.deleteAll(stored.stream()
                 .map(photo -> new StorageTarget(StorageArea.TRUESHOT_ORIGINAL, photo.getOriginalStorageKey()))
                 .toList());
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MICROS);
         stored.forEach(photo -> photo.markOriginalDeleted(now));
     }
 
