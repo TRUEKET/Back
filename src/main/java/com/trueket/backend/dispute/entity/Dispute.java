@@ -1,0 +1,157 @@
+package com.trueket.backend.dispute.entity;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.trueket.backend.dispute.entity.enums.DisputeReason;
+import com.trueket.backend.dispute.entity.enums.DisputeStatus;
+import com.trueket.backend.dispute.entity.enums.ImpersonationResult;
+import com.trueket.backend.identifier.entity.Identifier;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+@Entity
+@Table(name = "disputes")
+@Getter
+@NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
+public class Dispute {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "receipt_no", nullable = false, unique = true)
+    private String receiptNo;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "identifier_id", nullable = false)
+    private Identifier identifier;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private DisputeReason reason;
+
+    private String description;
+
+    @Column(name = "seller_email", nullable = false)
+    private String sellerEmail;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "proof_images", columnDefinition = "jsonb", nullable = false)
+    private JsonNode proofImages;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "impersonation_result")
+    private ImpersonationResult impersonationResult;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private OffsetDateTime createdAt;
+
+    @Column(name = "resolved_at")
+    private OffsetDateTime resolvedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private DisputeStatus status;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "check_result", columnDefinition = "jsonb")
+    private JsonNode checkResult;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "target_report_ids", columnDefinition = "jsonb", nullable = false)
+    private JsonNode targetReportIds;
+
+    @OneToMany(mappedBy = "dispute", fetch = FetchType.LAZY)
+    private List<DisputeItem> disputeItems = new ArrayList<>();
+
+    // 이의제기 생성
+    public static Dispute create(
+            String receiptNo,
+            Identifier identifier,
+            DisputeReason reason,
+            String description,
+            String sellerEmail,
+            JsonNode targetReportIds
+    ) {
+        Dispute dispute = new Dispute();
+
+        dispute.receiptNo = receiptNo;
+        dispute.identifier = identifier;
+        dispute.reason = reason;
+        dispute.description = description;
+        dispute.sellerEmail = sellerEmail;
+        dispute.proofImages =
+                com.fasterxml.jackson.databind.node.JsonNodeFactory
+                        .instance.arrayNode();
+        dispute.targetReportIds = targetReportIds;
+        dispute.status = DisputeStatus.CHECKING;
+        dispute.createdAt = OffsetDateTime.now();
+
+        return dispute;
+    }
+
+    public void resolve(ImpersonationResult result) {
+        if (result == null) {
+            throw new IllegalArgumentException("검토 결과가 필요합니다.");
+        }
+
+        if (this.resolvedAt != null) {
+            throw new IllegalStateException("이미 검토가 완료된 이의제기입니다.");
+        }
+
+        this.impersonationResult = result;
+        this.resolvedAt = OffsetDateTime.now();
+    }
+
+    public void deliver(JsonNode checkResult) {
+        if (this.status != DisputeStatus.CHECKING) {
+            throw new IllegalStateException("증빙 확인 중인 이의제기가 아닙니다.");
+        }
+
+        this.checkResult = checkResult;
+        this.status = DisputeStatus.DELIVERED;
+    }
+
+    public void reject(JsonNode checkResult) {
+        if (this.status != DisputeStatus.CHECKING) {
+            throw new IllegalStateException("증빙 확인 중인 이의제기가 아닙니다.");
+        }
+
+        this.checkResult = checkResult;
+        this.status = DisputeStatus.REJECTED;
+        this.resolvedAt = OffsetDateTime.now();
+    }
+
+    public void setProofImages(JsonNode proofImages) {
+        if (this.status != DisputeStatus.CHECKING) {
+            throw new IllegalStateException(
+                    "증빙 확인 중인 이의제기만 수정할 수 있습니다."
+            );
+        }
+
+        if (proofImages == null || !proofImages.isArray()) {
+            throw new IllegalArgumentException(
+                    "증빙 이미지 경로는 JSON 배열이어야 합니다."
+            );
+        }
+
+        this.proofImages = proofImages;
+    }
+
+    public void fail() {
+        if (this.status != DisputeStatus.CHECKING) {
+            return;
+        }
+
+        this.status = DisputeStatus.FAILED;
+        this.resolvedAt = OffsetDateTime.now();
+    }
+    
+}

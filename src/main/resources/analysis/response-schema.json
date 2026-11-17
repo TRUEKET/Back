@@ -1,0 +1,142 @@
+{
+  "type": "object",
+  "properties": {
+    "readable": {
+      "type": "boolean"
+    },
+    "detected_type": {
+      "type": "string",
+      "enum": [
+        "transfer",
+        "aom",
+        "proxy",
+        "cancel",
+        "etc"
+      ]
+    },
+    "type_mismatch": {
+      "type": "boolean"
+    },
+    "sentences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "speaker": {
+            "type": "string",
+            "enum": [
+              "SELLER",
+              "BUYER",
+              "UNKNOWN"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "image_index": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "id",
+          "speaker",
+          "text",
+          "image_index"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sentence_id": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sentence_id",
+          "quote",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "extracted": {
+      "type": "object",
+      "properties": {
+        "accounts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "판매자의 은행명과 전체 계좌번호를 한 문자열로 반환. 형식: 은행명 공백 숫자. 은행·숫자를 추측하거나 예시를 복사하지 않는다. 은행 누락·가림·불확실은 생략."
+          }
+        },
+        "phones": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "x_accounts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "accounts",
+        "phones",
+        "x_accounts",
+        "links"
+      ],
+      "additionalProperties": false
+    },
+    "other_suspicious": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sensitive_values": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "readable",
+    "detected_type",
+    "type_mismatch",
+    "sentences",
+    "signals",
+    "extracted",
+    "other_suspicious",
+    "sensitive_values"
+  ],
+  "additionalProperties": false
+}
