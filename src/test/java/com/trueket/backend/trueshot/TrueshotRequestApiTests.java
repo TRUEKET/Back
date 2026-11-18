@@ -305,6 +305,12 @@ class TrueshotRequestApiTests {
                 .andExpect(jsonPath("$.activeDeadline").isEmpty());
         mvc.perform(get("/trueshot/{id}",id).session(buyer.session()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.failureCode").value("FIRST_PHOTO_TIMEOUT"));
+        mvc.perform(get("/trueshot").session(buyer.session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(id))
+                .andExpect(jsonPath("$[0].status").value("FAILED"))
+                .andExpect(jsonPath("$[0].failureCode")
+                        .value("FIRST_PHOTO_TIMEOUT"));
     }
 
     @Test
