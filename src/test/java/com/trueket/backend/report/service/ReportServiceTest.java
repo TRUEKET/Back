@@ -9,7 +9,7 @@ import com.trueket.backend.report.repository.ReportIdentifierRepository;
 import com.trueket.backend.report.dto.ReportDetailResponse;
 import com.trueket.backend.report.repository.EvidenceRepository;
 import com.trueket.backend.dispute.repository.DisputeItemRepository;
-
+import com.trueket.backend.dispute.service.DisputeEvidenceStorageService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,7 +45,8 @@ class ReportServiceTest {
     private EvidenceRepository evidenceRepository;
     @Mock
     private DisputeItemRepository disputeItemRepository;
-
+    @Mock
+    private DisputeEvidenceStorageService disputeEvidenceStorageService;
 
     @InjectMocks
     private ReportService reportService;

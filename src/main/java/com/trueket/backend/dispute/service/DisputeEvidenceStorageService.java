@@ -1,6 +1,7 @@
 
 package com.trueket.backend.dispute.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trueket.backend.dispute.dto.DisputeAiAnalysis;
 import com.trueket.backend.global.ai.AnalysisModelClient;
 import com.trueket.backend.global.exception.ApiException;
@@ -31,6 +32,10 @@ public class DisputeEvidenceStorageService {
     private final String serviceKey;
 
     private static final String BUCKET = "dispute-evidence";
+
+    // 신규 추가
+    private static final int SIGNED_URL_EXPIRES_IN = 300;
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     public DisputeEvidenceStorageService(
             @Value("${storage.supabase-url:}") String url,
@@ -175,6 +180,92 @@ public class DisputeEvidenceStorageService {
         send("DELETE", key, null);
     }
 
+
+    public String createSignedUrl(Long disputeId, String key) {
+
+        // 1. Storage 설정 및 파일 경로 검증
+        if (disputeId == null
+                || disputeId <= 0
+                || key == null
+                || serviceKey == null
+                || serviceKey.isBlank()
+                || url.isBlank()
+                || !url.startsWith("https://")
+                || !key.matches(
+                "disputes/" + disputeId
+                        + "/[0-9a-fA-F-]{36}\\.png"
+        )) {
+            throw signedUrlUnavailable();
+        }
+
+        try {
+            // 2. Supabase Signed URL 발급 API
+            URI uri = URI.create(
+                    url + "/storage/v1/object/sign/"
+                            + BUCKET + "/" + key
+            );
+
+            String body = JSON.createObjectNode()
+                    .put("expiresIn", SIGNED_URL_EXPIRES_IN)
+                    .toString();
+
+            HttpRequest request = HttpRequest.newBuilder(uri)
+                    .timeout(Duration.ofSeconds(10))
+                    .header("apikey", serviceKey)
+                    .header("Authorization", "Bearer " + serviceKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+
+            // 3. Supabase 응답 확인
+            HttpResponse<String> response = http.send(
+                    request,
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            if (response.statusCode() < 200
+                    || response.statusCode() >= 300) {
+                throw signedUrlUnavailable();
+            }
+
+            var result = JSON.readTree(response.body());
+
+            String signedPath = result
+                    .path("signedURL")
+                    .asText("");
+
+            // 4. 예상된 Storage 경로만 허용
+            String expectedPath =
+                    "/object/sign/" + BUCKET + "/" + key;
+
+            if (signedPath.startsWith(expectedPath + "?token=")) {
+                return url + "/storage/v1" + signedPath;
+            }
+
+            if (signedPath.startsWith(
+                    "/storage/v1" + expectedPath + "?token="
+            )) {
+                return url + signedPath;
+            }
+
+            throw signedUrlUnavailable();
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw signedUrlUnavailable();
+
+        } catch (IOException | IllegalArgumentException e) {
+            throw signedUrlUnavailable();
+        }
+    }
+
+    private ApiException signedUrlUnavailable() {
+        return new ApiException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "이의제기 증빙 사진을 조회하지 못했습니다."
+        );
+    }
+    
     private void send(String method, String key, byte[] bytes) {
         if (serviceKey == null || serviceKey.isBlank()
                 || url.isBlank()

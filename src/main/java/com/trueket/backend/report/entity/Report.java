@@ -1,6 +1,8 @@
+
 package com.trueket.backend.report.entity;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.trueket.backend.dispute.entity.DisputeItem;
 import com.trueket.backend.report.entity.enums.ReportKind;
 import com.trueket.backend.report.entity.enums.ReportStatus;
@@ -10,6 +12,7 @@ import com.trueket.backend.user.entity.User;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -48,11 +51,30 @@ public class Report {
     private TradeType tradeType;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "evidence_quotes", columnDefinition = "jsonb", nullable = false)
+    @Column(
+            name = "evidence_quotes",
+            columnDefinition = "jsonb",
+            nullable = false
+    )
     private JsonNode evidenceQuotes;
 
+    // 신규: 주요 대화 상세 판독 정보
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "reference_links", columnDefinition = "jsonb", nullable = false)
+    @ColumnDefault("'[]'::jsonb")
+    @Column(
+            name = "evidence_details",
+            columnDefinition = "jsonb",
+            nullable = false
+    )
+    private JsonNode evidenceDetails =
+            JsonNodeFactory.instance.arrayNode();
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(
+            name = "reference_links",
+            columnDefinition = "jsonb",
+            nullable = false
+    )
     private JsonNode referenceLinks;
 
     @Column(name = "sent_date")
@@ -62,7 +84,8 @@ public class Report {
     private OffsetDateTime createdAt;
 
     @OneToMany(mappedBy = "report", fetch = FetchType.LAZY)
-    private List<ReportIdentifier> reportIdentifiers = new ArrayList<>();
+    private List<ReportIdentifier> reportIdentifiers =
+            new ArrayList<>();
 
     @OneToMany(mappedBy = "report", fetch = FetchType.LAZY)
     private List<Evidence> evidences = new ArrayList<>();
@@ -70,13 +93,36 @@ public class Report {
     @OneToMany(mappedBy = "report", fetch = FetchType.LAZY)
     private List<DisputeItem> disputeItems = new ArrayList<>();
 
-    // 신고 생성
+    // 기존 신고 생성 메서드 (호환성 유지)
     public static Report create(
             User user,
             String reporterHash,
             ReportKind kind,
             TradeType tradeType,
             JsonNode evidenceQuotes,
+            JsonNode referenceLinks,
+            LocalDate sentDate
+    ) {
+        return create(
+                user,
+                reporterHash,
+                kind,
+                tradeType,
+                evidenceQuotes,
+                JsonNodeFactory.instance.arrayNode(),
+                referenceLinks,
+                sentDate
+        );
+    }
+
+    // 신규: 상세 판독 정보를 포함한 신고 생성
+    public static Report create(
+            User user,
+            String reporterHash,
+            ReportKind kind,
+            TradeType tradeType,
+            JsonNode evidenceQuotes,
+            JsonNode evidenceDetails,
             JsonNode referenceLinks,
             LocalDate sentDate
     ) {
@@ -88,6 +134,11 @@ public class Report {
         report.status = ReportStatus.PUBLISHED;
         report.tradeType = tradeType;
         report.evidenceQuotes = evidenceQuotes;
+
+        report.evidenceDetails = evidenceDetails == null
+                ? JsonNodeFactory.instance.arrayNode()
+                : evidenceDetails.deepCopy();
+
         report.referenceLinks = referenceLinks;
         report.sentDate = sentDate;
         report.createdAt = OffsetDateTime.now();
@@ -109,5 +160,4 @@ public class Report {
     public void publish() {
         this.status = ReportStatus.PUBLISHED;
     }
-    
 }

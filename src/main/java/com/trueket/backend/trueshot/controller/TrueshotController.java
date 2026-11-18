@@ -47,7 +47,31 @@ public class TrueshotController {
         return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(result);
     }
 
-    @Operation(summary = "내 트루샷 요청 목록 조회", description = "구매자가 트루샷 요청 목록 화면에 들어오거나 목록을 새로고침할 때 호출합니다.")
+
+    @Operation(
+            summary = "내 트루샷 요청 목록 조회",
+            description = """
+                구매자가 트루샷 요청 목록 화면에 들어오거나
+                목록을 새로고침할 때 호출합니다.
+
+                [요청 상태]
+                - PENDING: 촬영 대기
+                - IN_PROGRESS: 인증 진행 중
+                - PASSED: 인증 성공
+                - FAILED: 인증 실패 또는 시간 만료
+
+                [실패 코드 - failureCode]
+                - REQUEST_TIMEOUT: 전체 요청 시간 만료
+                - FIRST_PHOTO_TIMEOUT: 첫 번째 사진 제출 시간 초과
+                - SECOND_PHOTO_TIMEOUT: 두 번째 사진 제출 시간 초과
+                - ANALYSIS_TIMEOUT: 사진 분석 시간 초과
+                - VERIFICATION_FAILED: 사진 인증 실패
+                - null: 실패하지 않은 상태
+
+                시간 초과로 인한 실패와 일반 인증 실패를
+                failureCode를 통해 구분할 수 있습니다.
+                """
+    )
     @ApiResponse(responseCode = "200", description = "요청 목록 조회 완료")
     @GetMapping
     public ResponseEntity<List<RequestSummary>> list(@Parameter(hidden = true) Authentication authentication) {

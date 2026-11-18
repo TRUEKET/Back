@@ -3,6 +3,7 @@ package com.trueket.backend.report.service;
 
 import com.trueket.backend.dispute.dto.DisputeNoticeResponse;
 import com.trueket.backend.dispute.repository.DisputeItemRepository;
+import com.trueket.backend.dispute.service.DisputeEvidenceStorageService;
 import com.trueket.backend.global.exception.BusinessException;
 import com.trueket.backend.global.exception.ErrorCode;
 import com.trueket.backend.report.dto.ReportDetailResponse;
@@ -14,6 +15,7 @@ import com.trueket.backend.report.entity.ReportIdentifier;
 import com.trueket.backend.report.repository.EvidenceRepository;
 import com.trueket.backend.report.repository.ReportIdentifierRepository;
 import com.trueket.backend.report.repository.ReportRepository;
+import com.trueket.backend.dispute.dto.DisputeDetailResponse;
 
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ public class ReportService {
     private final EvidenceRepository evidenceRepository;
     private final DisputeItemRepository disputeItemRepository;
     private final EntityManager entityManager;
+    private final DisputeEvidenceStorageService disputeEvidenceStorageService;
 
     // Supabase Storage 증빙 파일 관리
     private final SupabaseReportEvidenceStore supabaseReportEvidenceStore;
@@ -83,9 +86,9 @@ public class ReportService {
         });
     }
 
-    // =====================================================
-    // RP-06. 내 신고 상세 조회
-    // =====================================================
+// =====================================================
+// RP-06. 내 신고 상세 조회
+// =====================================================
 
     public ReportDetailResponse getMyReportDetail(
             Long userId,
@@ -113,10 +116,15 @@ public class ReportService {
                         )
                         .toList();
 
-        List<DisputeNoticeResponse> disputes =
-                disputeItemRepository.findAllByReport_Id(reportId)
+        // 이의제기 상세 정보 조회
+        List<DisputeDetailResponse> disputes =
+                disputeItemRepository
+                        .findAllByReport_Id(reportId)
                         .stream()
-                        .map(DisputeNoticeResponse::from)
+                        .map(item -> DisputeDetailResponse.from(
+                                item,
+                                disputeEvidenceStorageService
+                        ))
                         .toList();
 
         return ReportDetailResponse.from(
