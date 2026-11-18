@@ -83,6 +83,13 @@ class TrueshotOpenApiTests {
         assertTrue(recovery.has("activeDeadline"));
         assertTrue(recovery.has("remainingMillis"));
         assertTrue(spec.path("components").path("schemas").path("RequestDetail").path("properties").has("failureCode"));
+        assertTrue(
+                spec.path("components")
+                        .path("schemas")
+                        .path("RequestSummary")
+                        .path("properties")
+                        .has("failureCode")
+        );
     }
 
     @Test

@@ -35,20 +35,62 @@ public final class TrueshotDtos {
             boolean sellerConsented
     ) {}
 
+
     public record RequestSummary(
-            @Schema(description = "트루샷 요청 ID", example = "1") Long id,
-            @Schema(description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용", example = "공연 티켓 인증") String title,
-            @Schema(description = "인증 요청 상태") TrueshotStatus status,
-            @Schema(description = "현재 인증 진행 단계") TrueshotPhase phase,
-            @Schema(description = "요청 생성 시각") OffsetDateTime createdAt,
-            @Schema(description = "인증 링크 만료 시각") OffsetDateTime expiresAt
+            @Schema(description = "트루샷 요청 ID", example = "1")
+            Long id,
+
+            @Schema(
+                    description = "요청 제목. 생성 시 최대 20자이며 null·공백은 기본 제목 사용",
+                    example = "공연 티켓 인증"
+            )
+            String title,
+
+            @Schema(description = "인증 요청 상태")
+            TrueshotStatus status,
+
+            @Schema(description = "현재 인증 진행 단계")
+            TrueshotPhase phase,
+
+            @Schema(description = "요청 생성 시각")
+            OffsetDateTime createdAt,
+
+            @Schema(description = "인증 링크 만료 시각")
+            OffsetDateTime expiresAt,
+
+            // 신규 추가
+            @Schema(
+                    description = "인증 실패 코드. 실패하지 않은 경우 null",
+                    allowableValues = {
+                            "REQUEST_TIMEOUT",
+                            "FIRST_PHOTO_TIMEOUT",
+                            "SECOND_PHOTO_TIMEOUT",
+                            "ANALYSIS_TIMEOUT",
+                            "VERIFICATION_FAILED"
+                    },
+                    example = "REQUEST_TIMEOUT",
+                    nullable = true
+            )
+            String failureCode
     ) {
-        public static RequestSummary from(TrueshotRequest request, OffsetDateTime now) {
-            return new RequestSummary(request.getId(), request.getTitle(),
-                    effectiveStatus(request, now), effectivePhase(request, now),
-                    request.getCreatedAt(), request.getExpiresAt());
+        public static RequestSummary from(
+                TrueshotRequest request,
+                OffsetDateTime now
+        ) {
+            var failure = request.failureCode(now);
+
+            return new RequestSummary(
+                    request.getId(),
+                    request.getTitle(),
+                    effectiveStatus(request, now),
+                    effectivePhase(request, now),
+                    request.getCreatedAt(),
+                    request.getExpiresAt(),
+                    failure == null ? null : failure.name()
+            );
         }
     }
+
 
     public record RequestDetail(
             @Schema(description = "트루샷 요청 ID", example = "1") Long id,

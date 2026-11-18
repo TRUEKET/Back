@@ -20,8 +20,15 @@ class AnalysisReportSourceTests {
     final Clock clock = Clock.fixed(Instant.parse("2026-11-13T00:00:00Z"), ZoneOffset.UTC);
     final AnalysisSessionStore store = new AnalysisSessionStore(clock);
     final UserRepository users = mock(UserRepository.class);
-    final AnalysisReportSourceService service = new AnalysisReportSourceService(store, users,
-            new ChatStageService(new SignalDictionary()), new AnalysisRedactor());
+    final AnalysisReportSourceService service =
+            new AnalysisReportSourceService(
+                    store,
+                    users,
+                    new ChatStageService(new SignalDictionary()),
+                    new AnalysisRedactor(),
+                    new ConversationDetailsService(),
+                    new FraudCaseDictionary()
+            );
     final MockHttpSession session = new MockHttpSession();
     UUID id;
 
@@ -100,7 +107,14 @@ class AnalysisReportSourceTests {
             public Clock withZone(ZoneId zone){return this;} public Instant instant(){return time[0];}};
         var expiring=new AnalysisSessionStore(advancing);
         UUID expires=expiring.save(owner,new AnalysisSessionStore.Snapshot(store.get(id,owner).extraction(),List.of()));
-        var source=new AnalysisReportSourceService(expiring,users,new ChatStageService(new SignalDictionary()),new AnalysisRedactor());
+        var source = new AnalysisReportSourceService(
+                expiring,
+                users,
+                new ChatStageService(new SignalDictionary()),
+                new AnalysisRedactor(),
+                new ConversationDetailsService(),
+                new FraudCaseDictionary()
+        );
         time[0]=time[0].plusSeconds(900);
         assertStatus(HttpStatus.NOT_FOUND,()->source.load(expires,session));
     }

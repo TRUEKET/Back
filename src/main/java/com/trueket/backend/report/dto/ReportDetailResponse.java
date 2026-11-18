@@ -2,12 +2,14 @@
 package com.trueket.backend.report.dto;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.trueket.backend.dispute.dto.DisputeNoticeResponse;
+import com.trueket.backend.dispute.dto.DisputeDetailResponse;
 import com.trueket.backend.report.entity.Report;
 import com.trueket.backend.report.entity.enums.ReportKind;
 import com.trueket.backend.report.entity.enums.ReportStatus;
 import com.trueket.backend.report.entity.enums.TradeType;
+import com.trueket.backend.analyze.dto.ReportEvidenceDetail;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
@@ -42,13 +44,36 @@ public record ReportDetailResponse(
         )
         TradeType tradeType,
 
-        @Schema(
-                description = "JD 판독에서 저장한 근거 문장. 일반적으로 문자열 목록"
+        @ArraySchema(
+                arraySchema = @Schema(
+                        description = "JD 판독에서 저장한 근거 문장 목록"
+                ),
+                schema = @Schema(
+                        type = "string",
+                        example = "본명 말고 닉네임으로 입금해주세요."
+                )
         )
         Object evidenceQuotes,
 
-        @Schema(
-                description = "신고 등록 시 입력한 참고 링크 목록"
+        @ArraySchema(
+                arraySchema = @Schema(
+                        description = "주요 대화 상세 정보. 없으면 빈 배열"
+                ),
+                schema = @Schema(
+                        implementation = ReportEvidenceDetail.class
+                )
+        )
+        Object evidenceDetails,
+
+        @ArraySchema(
+                arraySchema = @Schema(
+                        description = "신고 등록 시 입력한 참고 링크 목록"
+                ),
+                schema = @Schema(
+                        type = "string",
+                        format = "uri",
+                        example = "https://example.com/reference"
+                )
         )
         Object referenceLinks,
 
@@ -72,17 +97,18 @@ public record ReportDetailResponse(
         )
         List<ReportIdentifierResponse> identifiers,
 
+        // 상세 조회용 DTO로 변경
         @Schema(
-                description = "해당 신고에 연결된 RP-08 이의제기 알림 목록"
+                description = "해당 신고에 연결된 RP-08 이의제기 상세 목록"
         )
-        List<DisputeNoticeResponse> disputes
+        List<DisputeDetailResponse> disputes
 
 ) {
 
     public static ReportDetailResponse from(
             Report report,
             List<ReportIdentifierResponse> identifiers,
-            List<DisputeNoticeResponse> disputes
+            List<DisputeDetailResponse> disputes
     ) {
         return new ReportDetailResponse(
                 report.getId(),
@@ -90,6 +116,10 @@ public record ReportDetailResponse(
                 report.getStatus(),
                 report.getTradeType(),
                 convertJsonNode(report.getEvidenceQuotes()),
+
+                // 신규 추가
+                convertJsonNode(report.getEvidenceDetails()),
+
                 convertJsonNode(report.getReferenceLinks()),
                 report.getSentDate(),
                 report.getCreatedAt(),

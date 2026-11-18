@@ -1,0 +1,24 @@
+
+[
+  {
+    "signalId": "S-B1",
+    "summary": "입금자명이 잘못됐다는 이유로 추가 송금을 요구해 약 200명의 피해자가 발생한 사건",
+    "source": "아시아경제",
+    "publishedAt": "2026-03-25",
+    "url": "https://view.asiae.co.kr/article/2026032316115160264"
+  },
+  {
+    "signalId": "S-B1",
+    "summary": "예매 수수료가 빠졌다며 재입금을 요구한 뮤지컬 티켓 거래 사기",
+    "source": "아시아경제",
+    "publishedAt": "2026-02-09",
+    "url": "https://view.asiae.co.kr/visual-news/article/2026020914165800654"
+  },
+  {
+    "signalId": "S-B3",
+    "summary": "닉네임 입금과 2차 송금을 요구한 콘서트 티켓 거래에서 36만원 피해 발생",
+    "source": "아시아경제",
+    "publishedAt": "2026-02-09",
+    "url": "https://view.asiae.co.kr/visual-news/article/2026020914165800654"
+  }
+]

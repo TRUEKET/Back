@@ -26,6 +26,8 @@ import com.trueket.backend.report.entity.Evidence;
 import com.trueket.backend.report.entity.PendingReportEvidence;
 import com.trueket.backend.report.entity.enums.EvidenceKind;
 import com.trueket.backend.report.repository.EvidenceRepository;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.trueket.backend.analyze.dto.ReportEvidenceDetail;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
@@ -192,13 +194,47 @@ public class ReportCreationService {
             }
         }
 
-        // 7. JD 근거 말풍선 저장
+
+// 7-1. JD 근거 말풍선 저장 (기존 호환성 유지)
         ArrayNode evidenceQuotesJson =
                 JsonNodeFactory.instance.arrayNode();
 
         for (var evidence : source.evidence()) {
             evidenceQuotesJson.add(evidence.quote());
         }
+
+// 7-2. JD 주요 대화 상세 정보 저장
+        ArrayNode evidenceDetailsJson =
+                JsonNodeFactory.instance.arrayNode();
+
+        for (ReportEvidenceDetail detail : source.evidenceDetails()) {
+
+            ObjectNode detailNode =
+                    evidenceDetailsJson.addObject();
+
+            detailNode.put("imageIndex", detail.imageIndex());
+            detailNode.put("signalId", detail.signalId());
+            detailNode.put("quote", detail.quote());
+            detailNode.put("severity", detail.severity().name());
+            detailNode.put("action", detail.action());
+            detailNode.put("reason", detail.reason());
+            detailNode.put("informational", detail.informational());
+
+            // 실제 피해 사례 및 기사 정보
+            ArrayNode casesNode = detailNode.putArray("cases");
+
+            for (var fraudCase : detail.cases()) {
+
+                ObjectNode caseNode = casesNode.addObject();
+
+                caseNode.put("signalId", fraudCase.signalId());
+                caseNode.put("summary", fraudCase.summary());
+                caseNode.put("source", fraudCase.source());
+                caseNode.put("publishedAt", fraudCase.publishedAt());
+                caseNode.put("url", fraudCase.url());
+            }
+        }
+
 
         // 8. 참고 링크 저장
         List<String> links = request.referenceLinks() == null
@@ -211,7 +247,7 @@ public class ReportCreationService {
         for (String link : links) {
             referenceLinksJson.add(link);
         }
-
+        
         // 9. 신고 생성
         Report report = Report.create(
                 user,
@@ -219,11 +255,13 @@ public class ReportCreationService {
                 request.kind(),
                 source.tradeType(),
                 evidenceQuotesJson,
+                evidenceDetailsJson,
                 referenceLinksJson,
                 request.sentDate()
         );
 
         reportRepository.saveAndFlush(report);
+
 
         // 10. 식별자 조회 또는 생성
         List<Long> identifierIds = new ArrayList<>();
