@@ -48,21 +48,26 @@ public record ReportListResponse(
         @Schema(
                 description = "연결된 RP-08 이의제기 알림 목록. 이의제기가 없으면 빈 배열"
         )
-        List<DisputeNoticeResponse> disputes
+        List<DisputeNoticeResponse> disputes,
+        @Schema(description="본인 신고의 식별자 목록. 전체 표시는 각 항목의 value를 사용")
+        List<ReportIdentifierResponse> identifiers
 
 ) {
 
-    public static ReportListResponse from(
-            Report report,
-            List<DisputeNoticeResponse> disputes
-    ) {
+    public static ReportListResponse from(Report report, List<DisputeNoticeResponse> disputes) {
+        return from(report, disputes, List.of());
+    }
+
+    public static ReportListResponse from(Report report, List<DisputeNoticeResponse> disputes,
+                                          List<ReportIdentifierResponse> identifiers) {
         return new ReportListResponse(
                 report.getId(),
                 report.getKind(),
                 report.getStatus(),
                 report.getTradeType(),
                 report.getCreatedAt(),
-                List.copyOf(disputes)
+                List.copyOf(disputes),
+                List.copyOf(identifiers)
         );
     }
 

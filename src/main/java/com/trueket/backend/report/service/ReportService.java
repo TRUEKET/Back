@@ -33,6 +33,7 @@ import java.util.List;
 public class ReportService {
 
     private final ReportRepository reportRepository;
+    private final OwnedReportIdentifierMapper ownedIdentifiers;
     private final ReportIdentifierRepository reportIdentifierRepository;
     private final EvidenceRepository evidenceRepository;
     private final DisputeItemRepository disputeItemRepository;
@@ -65,6 +66,9 @@ public class ReportService {
             return reports.map(ReportListResponse::from);
         }
 
+        // Only IDs from the authenticated owner's page are used for this bulk query.
+        var identifiersByReport = reportIdentifierRepository.findVisibleIdentifiersByReportIds(reportIds)
+                .stream().collect(java.util.stream.Collectors.groupingBy(link -> link.getReport().getId()));
         var disputesByReport = disputeItemRepository
                 .findAllForReportIds(reportIds)
                 .stream()
@@ -82,7 +86,9 @@ public class ReportService {
                     .map(DisputeNoticeResponse::from)
                     .toList();
 
-            return ReportListResponse.from(report, notices);
+            var identifiers = identifiersByReport.getOrDefault(report.getId(), List.of()).stream()
+                    .map(link -> ownedIdentifiers.map(link.getIdentifier())).toList();
+            return ReportListResponse.from(report, notices, identifiers);
         });
     }
 
@@ -109,11 +115,7 @@ public class ReportService {
         List<ReportIdentifierResponse> identifiers =
                 reportIdentifiers.stream()
                         .filter(ri -> !ri.isHidden())
-                        .map(ri ->
-                                ReportIdentifierResponse.from(
-                                        ri.getIdentifier()
-                                )
-                        )
+                        .map(ri -> ownedIdentifiers.map(ri.getIdentifier()))
                         .toList();
 
         // 이의제기 상세 정보 조회
