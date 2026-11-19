@@ -59,6 +59,8 @@ public class ReportController {
                     - 거래 유형
                     - 신고 등록 일시
                     - 연결된 이의제기 알림 목록
+                    - 본인 신고 식별자 배열(identifiers), 전체 표시는 value 사용
+                    - Cache-Control: no-store
 
                     신고 목록은 생성 일시 기준 최신순으로 조회합니다.
 
@@ -71,6 +73,7 @@ public class ReportController {
                     responseCode = "200",
                     description = "내 신고 목록 조회 성공",
                     content = @Content(
+                            schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = com.trueket.backend.report.dto.MyReportApiSchemas.ListResponse.class),
                             mediaType = "application/json",
                             examples = @ExampleObject(
                                     name = "목록 조회 성공",
@@ -86,7 +89,8 @@ public class ReportController {
                                                     "status": "PUBLISHED",
                                                     "tradeType": "TRANSFER",
                                                     "createdAt": "2026-11-15T20:00:00+09:00",
-                                                    "disputes": []
+                                                    "disputes": [],
+                                                    "identifiers": [{"identifierId":308,"type":"ACCOUNT","value":"신한 111111111111","maskedValue":"신한 111-111-******"}]
                                                   },
                                                   {
                                                     "reportId": 364,
@@ -94,7 +98,8 @@ public class ReportController {
                                                     "status": "PUBLISHED",
                                                     "tradeType": "AOM",
                                                     "createdAt": "2026-11-14T18:30:00+09:00",
-                                                    "disputes": []
+                                                    "disputes": [],
+                                                    "identifiers": [{"identifierId":308,"type":"ACCOUNT","value":"신한 111111111111","maskedValue":"신한 111-111-******"}]
                                                   }
                                                 ],
                                                 "pageable": {
@@ -172,9 +177,8 @@ public class ReportController {
         Page<ReportListResponse> reports =
                 reportService.getMyReports(userId, pageable);
 
-        return ResponseEntity.ok(
-                ApiResponse.success(reports)
-        );
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(ApiResponse.success(reports));
     }
 
     // =====================================================
@@ -223,7 +227,9 @@ public class ReportController {
                 - 해당 신고의 실제 피해 사실을 의미하지 않음
 
                 [개인정보]
-                - 식별자는 마스킹된 값만 반환
+                - 본인 신고 식별자의 전체 표시는 identifiers[].value 사용
+                - maskedValue는 기존 클라이언트 호환용 마스킹 값
+                - 전체 값 응답은 Cache-Control: no-store 적용
                 - 숨김 처리된 식별자는 제외
                 - 대화 원본 사진은 반환하지 않음
                 - 판매자 이메일은 반환하지 않음
@@ -260,6 +266,7 @@ public class ReportController {
                     responseCode = "200",
                     description = "내 신고 상세 조회 성공",
                     content = @Content(
+                            schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = com.trueket.backend.report.dto.MyReportApiSchemas.DetailResponse.class),
                             mediaType = "application/json",
                             examples = {
                                     @ExampleObject(
@@ -303,7 +310,8 @@ public class ReportController {
                                                       {
                                                         "identifierId": 308,
                                                         "type": "ACCOUNT",
-                                                        "maskedValue": "신한 111-111-******"
+                                                        "maskedValue": "신한 111-111-******",
+                                                        "value": "신한 111111111111"
                                                       }
                                                     ],
                                                     "disputes": [
@@ -349,7 +357,8 @@ public class ReportController {
                                                       {
                                                         "identifierId": 308,
                                                         "type": "ACCOUNT",
-                                                        "maskedValue": "신한 111-111-******"
+                                                        "maskedValue": "신한 111-111-******",
+                                                        "value": "신한 111111111111"
                                                       }
                                                     ],
                                                     "disputes": []

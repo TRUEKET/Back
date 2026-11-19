@@ -71,7 +71,7 @@ class AnalysisFraudEvidenceFlowTests {
         String response=mvc.perform(multipart("/analyze").file(capture).session(session)
                 .header(csrf.getHeaderName(),csrf.getToken())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         var analyzed=json.readTree(response);
-        assertEquals("***1111",analyzed.path("identifiers").get(0).path("value").asText());
+        assertEquals("신한 111-111-1-******",analyzed.path("identifiers").get(0).path("value").asText());
         assertFalse(response.contains("1111111111111"));
         analysisId=UUID.fromString(analyzed.path("analyzeId").asText());
         assertEquals(List.of("신한 1111111111111"),sources.load(analysisId,session).identifiers().accounts());
@@ -80,6 +80,31 @@ class AnalysisFraudEvidenceFlowTests {
         when(storage.createPendingKey(anyLong())).thenAnswer(i->"pending/"+i.getArgument(0)+"/"+UUID.randomUUID()+".png");
         when(storage.createReportKey(anyLong())).thenAnswer(i->"reports/"+i.getArgument(0)+"/"+UUID.randomUUID()+".png");
     }
+    @Test void labelledAccountAndPhoneBothReturnEvenWhenModelMissesAccount() throws Exception {
+        when(model.generate(anyString(),anyList(),any(),any())).thenReturn("""
+          {"readable":true,"detected_type":"transfer","type_mismatch":false,
+           "sentences":[{"id":"s1","speaker":"SELLER","text":"로그인 인증번호를 알려주세요.","image_index":1}],
+           "signals":[{"id":"S-A2","sentence_id":"s1","quote":"로그인 인증번호를 알려주세요.","reason":"인증번호 요구"}],
+           "extracted":{"accounts":[],"phones":["01012345678"],"x_accounts":[],"links":[]},
+           "other_suspicious":null,"sensitive_values":["01012345678"]}
+          """);
+        var capture=new MockMultipartFile("captures","synthetic.png","image/png",png.getBytes());
+        String response=mvc.perform(multipart("/analyze").file(capture).session(session)
+                .param("additionalInfo","판매자 계좌: 신한은행 110-22-123456\n판매자 전화번호: 010-1234-5678")
+                .header(csrf.getHeaderName(),csrf.getToken())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.identifiers.length()").value(2))
+                .andExpect(jsonPath("$.identifiers[0].type").value("ACCOUNT"))
+                .andExpect(jsonPath("$.identifiers[0].value").value("신한 110-22-******"))
+                .andExpect(jsonPath("$.identifiers[1].type").value("PHONE"))
+                .andExpect(jsonPath("$.identifiers[1].value").value("010-****-5678"))
+                .andReturn().getResponse().getContentAsString();
+        assertFalse(response.contains("11022123456"));assertFalse(response.contains("01012345678"));
+        var id=UUID.fromString(json.readTree(response).path("analyzeId").asText());
+        var source=sources.load(id,session);
+        assertEquals(List.of("신한은행 110-22-123456"),source.identifiers().accounts());
+        assertEquals(List.of("01012345678"),source.identifiers().phones());
+    }
+
     @Test void maskedDisplayMustNotBeSubmittedAsFullAccount() throws Exception {
         mvc.perform(multipart("/reports/evidence").file(png).param("analysisId",analysisId.toString())
                 .param("account","***1111").session(session).header(csrf.getHeaderName(),csrf.getToken()))

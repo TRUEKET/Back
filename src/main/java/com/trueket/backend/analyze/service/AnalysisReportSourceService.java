@@ -226,7 +226,7 @@ public class AnalysisReportSourceService {
             case "S-D1" -> "거래 시간 압박";
 
             case "S-E1" -> "개인 계좌 선입금 요구";
-            case "S-E2" -> "과도한 가격 요구";
+            case "S-E2" -> "정가와 크게 다른 가격";
             case "S-E3" -> "특정 업체 이용 요구";
 
             case "S-F1" -> "거래 방식 변경";

@@ -100,10 +100,34 @@ class AnalyzeApiTests {
         assertThrows(ApiException.class, () -> store.get(result.analyzeId(), owner));
     }
 
+    @Test void normalizedQuoteUsesOriginalBeforeRedactionAndPhotoEvidence() throws Exception {
+        modelOutput = VALID.replace("\"quote\":\"먼저 01012345678로 연락하고 선입금해 주세요\"",
+                "\"quote\":\"먼저01012345678로연락하고선입금해주세요!\"");
+        UUID owner=UUID.randomUUID();
+        var result=service.analyze(captures(),"",owner);
+        assertEquals(Stage.DANGER,result.assessment().chat().stage());
+        assertEquals("v0.2",result.assessment().chat().dictionaryVersion());
+        assertEquals("먼저 ***로 연락하고 선입금해 주세요",result.assessment().chat().countedSignals().get(0).quote());
+        assertEquals(result.assessment().chat().countedSignals(),result.conversations().images().get(0).countedSignals());
+        assertFalse(json.writeValueAsString(result).contains("01012345678"));
+        assertTrue(store.get(result.analyzeId(),owner).showReportButton());
+    }
+
+    @Test void safeResultUsesNonGuaranteeingTitleAndLimitationWithoutChangingStage() throws Exception {
+        var data=(com.fasterxml.jackson.databind.node.ObjectNode)json.readTree(VALID);
+        data.set("signals",json.createArrayNode());modelOutput=data.toString();
+        var result=service.analyze(captures(),"",UUID.randomUUID());
+        var body=json.readTree(json.writeValueAsString(result));
+        assertEquals(Stage.SAFE,result.assessment().finalStage());
+        assertEquals("확인된 위험 신호 없음",body.path("resultTitle").asText());
+        assertTrue(body.path("limitationNotice").asText().contains("보장하지 않아요"));
+    }
+
     @Test void unreadableDoesNotProduceVerdictOrSession() throws Exception {
         modelOutput = "{\"readable\":false}";
         var result = service.analyze(captures(), "", UUID.randomUUID());
         assertFalse(result.readable());
+        assertEquals("대화를 읽지 못했어요",result.resultTitle());
         assertNull(result.analyzeId());
         assertNull(result.assessment());
         assertEquals(1,result.conversations().imageCount());
