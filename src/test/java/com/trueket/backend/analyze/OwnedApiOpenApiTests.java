@@ -45,6 +45,8 @@ class OwnedApiOpenApiTests {
     }
     @Test void analysisHasRealFileArrayAndAnonymousSessionCsrfContract() throws Exception {
         var doc=spec("analysis");var paths=doc.path("paths");assertEquals(3,paths.size());
+        var display=doc.path("components").path("schemas").path("AnalyzeResponse").path("properties");
+        assertTrue(display.has("resultTitle"));assertTrue(display.has("limitationNotice"));
         var post=paths.path("/analyze").path("post");
         assertTrue(csrf(post));assertTrue(post.path("security").isMissingNode());
         var schema=post.path("requestBody").path("content").path("multipart/form-data").path("schema");
@@ -62,7 +64,10 @@ class OwnedApiOpenApiTests {
         mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
         var config=json.readTree(mvc.perform(get("/v3/api-docs/swagger-config")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
         assertTrue(config.path("urls").toString().contains("accounts"));assertTrue(config.path("urls").toString().contains("analysis"));
-        assertTrue(spec("all").path("paths").has("/auth/logout"));
+        var all=spec("all");assertTrue(all.path("paths").has("/auth/logout"));
+        var schemas=all.path("components").path("schemas");
+        assertTrue(schemas.path("ReportIdentifierResponse").path("properties").has("value"));
+        assertTrue(schemas.path("ReportListResponse").path("properties").has("identifiers"));
         mvc.perform(get("/me")).andExpect(status().isUnauthorized());
         mvc.perform(post("/auth/login").contentType("application/json").content("{}"))
                 .andExpect(status().isForbidden());

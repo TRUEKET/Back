@@ -113,10 +113,21 @@ class AnalyzeApiTests {
         assertTrue(store.get(result.analyzeId(),owner).showReportButton());
     }
 
+    @Test void safeResultUsesNonGuaranteeingTitleAndLimitationWithoutChangingStage() throws Exception {
+        var data=(com.fasterxml.jackson.databind.node.ObjectNode)json.readTree(VALID);
+        data.set("signals",json.createArrayNode());modelOutput=data.toString();
+        var result=service.analyze(captures(),"",UUID.randomUUID());
+        var body=json.readTree(json.writeValueAsString(result));
+        assertEquals(Stage.SAFE,result.assessment().finalStage());
+        assertEquals("확인된 위험 신호 없음",body.path("resultTitle").asText());
+        assertTrue(body.path("limitationNotice").asText().contains("보장하지 않아요"));
+    }
+
     @Test void unreadableDoesNotProduceVerdictOrSession() throws Exception {
         modelOutput = "{\"readable\":false}";
         var result = service.analyze(captures(), "", UUID.randomUUID());
         assertFalse(result.readable());
+        assertEquals("대화를 읽지 못했어요",result.resultTitle());
         assertNull(result.analyzeId());
         assertNull(result.assessment());
         assertEquals(1,result.conversations().imageCount());

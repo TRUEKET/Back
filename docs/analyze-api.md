@@ -41,6 +41,12 @@ AI는 거래 유형·판매자 원문·신호 후보를 추출한다. 단계 결
 
 응답 표시를 바꾸어도 서버 스냅샷의 전체 식별자는 유지한다. 송금 증빙에는 마스킹 문자열이 아니라 ACCOUNT만 센 accountIndex를 보낸다. 보완한 값은 사용자가 입력한 판매자 정보이며 사진에서 확인됐거나 소유가 인증됐다는 뜻은 아니다.
 
+## 결과 문구·한계 안내 (#84)
+
+기존 assessment.finalStage의 SAFE/SUSPECT/DANGER와 계산 기준은 유지한다. 결과 화면이 사용할 `resultTitle`, `limitationNotice`가 추가된다. SAFE의 resultTitle은 **확인된 위험 신호 없음**이고 거래의 안전·티켓 진위를 보장하지 않는다는 limitationNotice를 함께 반환한다. readable=false의 제목은 읽기 실패 안내이며 새 판단 보류 상태를 만들지 않는다.
+
+프론트는 제목과 한계 안내를 결과 상단에서 연결한다. 이 서버 변경만으로 기존 화면의 문자열·배치가 자동으로 바뀌지는 않는다. 기존 message는 오류/재촬영 안내 용도로 그대로 유지한다.
+
 ## 환경변수
 
 `AI_PROVIDER=gemini`(기본값) 또는 `AI_PROVIDER=openai`로 하나를 선택한다. OpenAI 키는 GEMINI_API_KEY에 넣지 않는다. OpenAI 실행 설정·오류 처리·실제 검증 결과는 [OpenAI 판독 연결](openai-api.md)을 참고한다. 아래 Gemini 설정은 Gemini 선택 시 적용한다.

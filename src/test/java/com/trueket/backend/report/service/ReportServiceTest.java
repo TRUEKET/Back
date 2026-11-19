@@ -48,6 +48,9 @@ class ReportServiceTest {
     @Mock
     private DisputeEvidenceStorageService disputeEvidenceStorageService;
 
+    @Mock
+    private OwnedReportIdentifierMapper ownedIdentifiers;
+
     @InjectMocks
     private ReportService reportService;
 
@@ -154,7 +157,7 @@ class ReportServiceTest {
     }
 
     @Test
-    void 신고_상세_조회시_마스킹된_식별자를_반환한다() {
+    void 신고_상세_조회시_본인용_식별자와_호환_마스킹을_반환한다() {
 
         // given
         Long userId = 1L;
@@ -176,11 +179,8 @@ class ReportServiceTest {
         when(reportIdentifier.isHidden()).thenReturn(false);
         when(reportIdentifier.getIdentifier()).thenReturn(identifier);
 
-        when(identifier.getId()).thenReturn(5L);
-        when(identifier.getType()).thenReturn(
-                com.trueket.backend.identifier.entity.enums.IdentifierType.ACCOUNT
-        );
-        when(identifier.getValueMasked()).thenReturn("123-***-456");
+        when(ownedIdentifiers.map(identifier)).thenReturn(new com.trueket.backend.report.dto.ReportIdentifierResponse(
+                5L,"ACCOUNT","123-***-456","신한 12345678901"));
 
         // when
         ReportDetailResponse result =
@@ -192,6 +192,7 @@ class ReportServiceTest {
                 .isEqualTo(5L);
         assertThat(result.identifiers().get(0).maskedValue())
                 .isEqualTo("123-***-456");
+        assertThat(result.identifiers().get(0).value()).isEqualTo("신한 12345678901");
     }
 
     @Test
