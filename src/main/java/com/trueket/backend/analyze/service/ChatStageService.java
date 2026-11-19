@@ -86,12 +86,14 @@ public class ChatStageService {
             return null;
         }
         Sentence sentence = sentences.get(candidate.sentenceId());
-        if (sentence == null || sentence.speaker() != Speaker.SELLER || !sentence.text().contains(candidate.quote())) {
+        if (sentence == null || sentence.speaker() != Speaker.SELLER) {
             return null;
         }
+        String originalQuote = QuoteMatcher.findOriginal(sentence.text(), candidate.quote()).orElse(null);
+        if (originalQuote == null) return null;
         return dictionary.enabledSignal(candidate.id())
                 .map(definition -> new Evidence(definition.id(), definition.criterion(), definition.strength(),
-                        sentence.id(), candidate.quote(), candidate.reason()))
+                        sentence.id(), originalQuote, candidate.reason()))
                 .orElse(null);
     }
 

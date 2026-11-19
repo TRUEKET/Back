@@ -93,7 +93,7 @@ public record ReportDetailResponse(
         OffsetDateTime createdAt,
 
         @Schema(
-                description = "숨김 처리되지 않은 신고 대상 식별자 목록"
+                description = "본인 신고의 숨김 처리되지 않은 식별자 목록. 별표 없는 전체 표시는 각 항목의 value를 사용"
         )
         List<ReportIdentifierResponse> identifiers,
 

@@ -1,6 +1,7 @@
 package com.trueket.backend.analyze.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.trueket.backend.analyze.dto.Criterion;
 import com.trueket.backend.analyze.dto.SignalStrength;
 import org.springframework.core.io.ClassPathResource;
@@ -15,20 +16,29 @@ import java.util.Optional;
 @Component
 public class SignalDictionary {
 
-    public record Definition(String id, Criterion criterion, SignalStrength strength,
-                             boolean enabled, List<String> examples) {
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Definition(String id, Criterion criterion, String criterionName, String name,
+                             SignalStrength strength, boolean enabled, String definition,
+                             List<String> notSignal, List<String> examples, List<String> counterExamples) {
         public Definition {
             examples = List.copyOf(examples);
+            notSignal = notSignal == null ? List.of() : List.copyOf(notSignal);
+            counterExamples = counterExamples == null ? List.of() : List.copyOf(counterExamples);
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private record DictionaryFile(String version, List<Definition> signals) {}
     private final String version;
     private final Map<String, Definition> definitions;
 
     public SignalDictionary() throws IOException {
+        this(new ClassPathResource("analysis/signals.json").getInputStream());
+    }
+
+    SignalDictionary(java.io.InputStream input) throws IOException {
         DictionaryFile file;
-        try (var stream = new ClassPathResource("analysis/signals.json").getInputStream()) {
+        try (var stream = input) {
             file = new ObjectMapper().readValue(stream, DictionaryFile.class);
         }
         Map<String, Definition> loaded = new LinkedHashMap<>();

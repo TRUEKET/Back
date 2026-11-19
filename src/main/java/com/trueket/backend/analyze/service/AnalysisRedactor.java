@@ -6,6 +6,9 @@ import com.trueket.backend.analyze.dto.ModelExtraction;
 import com.trueket.backend.analyze.dto.AnalyzeResponse.MaskedIdentifier;
 import org.springframework.stereotype.Component;
 
+import com.trueket.backend.identifier.entity.enums.IdentifierType;
+import com.trueket.backend.identifier.util.IdentifierNormalizer;
+import com.trueket.backend.identifier.util.IdentifierMasker;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -35,10 +38,19 @@ public class AnalysisRedactor {
 
     public List<MaskedIdentifier> identifiers(ModelExtraction result) {
         List<MaskedIdentifier> masked = new ArrayList<>();
-        result.extracted().accounts().forEach(value -> masked.add(new MaskedIdentifier("ACCOUNT", mask(value))));
-        result.extracted().phones().forEach(value -> masked.add(new MaskedIdentifier("PHONE", mask(value))));
+        result.extracted().accounts().forEach(value -> masked.add(new MaskedIdentifier("ACCOUNT", formatted(IdentifierType.ACCOUNT, value))));
+        result.extracted().phones().forEach(value -> masked.add(new MaskedIdentifier("PHONE", formatted(IdentifierType.PHONE, value))));
         result.extracted().xAccounts().forEach(value -> masked.add(new MaskedIdentifier("SNS", mask(value))));
         return List.copyOf(masked);
+    }
+
+    private String formatted(IdentifierType expected, String value) {
+        try {
+            var normalized = IdentifierNormalizer.normalize(value);
+            if (normalized.type() == expected) return IdentifierMasker.mask(expected, normalized.value());
+        } catch (IllegalArgumentException ignored) { }
+        // Invalid/unrecognised formats must never leak their leading raw value.
+        return mask(value);
     }
 
     private String mask(String value) {
