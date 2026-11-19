@@ -49,7 +49,7 @@ public class AnalyzeService {
 
     public AnalyzeResponse analyze(List<MultipartFile> uploads, String additionalInfo, UUID owner) {
         List<Image> images = captures.prepare(uploads, additionalInfo);
-        ModelExtraction result = extract(images, additionalInfo);
+        ModelExtraction result = SupplementalIdentifiers.merge(extract(images, additionalInfo), additionalInfo);
         if (!result.readable()) {
             return new AnalyzeResponse(null, false, null, null, List.of(), null,
                     "대화를 읽지 못했어요. 글자가 잘 보이게 다시 캡처해 주세요",
