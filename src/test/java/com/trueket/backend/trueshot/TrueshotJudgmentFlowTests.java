@@ -359,6 +359,30 @@ class TrueshotJudgmentFlowTests {
         assertTrue(photos.findByRequestId(f.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()==null));
     }
 
+    @Test void missingOrUncertainScreenDoesNotInventBlurryPhotoAndReasonSurvivesReload() throws Exception {
+        for (boolean found : List.of(false, true)) {
+            var f = fixture(true);
+            when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(
+                    found, false, .3, .3, .4, .4, "", false));
+            String reason = found ? "두 번째 사진의 예매 화면을 확인할 수 없음" : "두 번째 사진에서 예매 화면을 찾지 못함";
+            submit(f, analysis(true)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.phase").value("FAILED"))
+                    .andExpect(jsonPath("$.checks[0].status").value("NOT_CHECKED"))
+                    .andExpect(jsonPath("$.checks[1].status").value("NOT_CHECKED"))
+                    .andExpect(jsonPath("$.failReasons.length()").value(1))
+                    .andExpect(jsonPath("$.failReasons[0]").value(reason));
+            mvc.perform(get(f.path() + "/result").session(f.seller().session()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.failureCode").value("VERIFICATION_FAILED"))
+                    .andExpect(jsonPath("$.checks[2].status").value("NOT_CHECKED"))
+                    .andExpect(jsonPath("$.checks[3].status").value("NOT_CHECKED"))
+                    .andExpect(jsonPath("$.failReasons.length()").value(1))
+                    .andExpect(jsonPath("$.failReasons[0]").value(reason));
+            assertTrue(requests.findById(f.id()).orElseThrow().getJudgmentResult().path("secondPhotoClear").isNull());
+        }
+        verify(masks, never()).detect(any());
+    }
+
     @Test void blurrySecondPhotoFailsEvenWhenMissionMatchesAndChecksSurviveReload() throws Exception {
         var f=fixture(true);
         when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"",false));

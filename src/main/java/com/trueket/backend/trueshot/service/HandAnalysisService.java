@@ -34,8 +34,10 @@ public class HandAnalysisService {
     public Output analyze(TrueshotImageInput.Prepared prepared, Input input, SecondMission mission) {
         if (input.hands().isEmpty()) return HandMissionEvaluator.evaluate(input, Status.NO_HANDS, null, mission);
         var detection = screens.detect(prepared);
-        if (!detection.found()) return HandMissionEvaluator.evaluate(input, Status.SCREEN_NOT_FOUND, null, mission).withQuality(detection.clear());
-        if (!detection.certain()) return HandMissionEvaluator.evaluate(input, Status.SCREEN_UNCERTAIN, null, mission).withQuality(detection.clear());
+        // 예매 화면을 특정하지 못한 것은 화질이 나쁘다는 관측과 다르다.
+        // 이 경우 화질은 미확인(null)으로 두고 화면 탐지 실패 사유만 반환한다.
+        if (!detection.found()) return HandMissionEvaluator.evaluate(input, Status.SCREEN_NOT_FOUND, null, mission);
+        if (!detection.certain()) return HandMissionEvaluator.evaluate(input, Status.SCREEN_UNCERTAIN, null, mission);
         if (!detection.validBounds()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "예매 화면 좌표를 확인하지 못했어요. 다시 시도해 주세요.");
         }

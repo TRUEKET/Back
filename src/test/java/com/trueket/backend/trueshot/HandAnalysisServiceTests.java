@@ -46,13 +46,16 @@ class HandAnalysisServiceTests {
 
     @Test void missingAndUncertainScreensNeverInventPositions() throws Exception {
         var photo=photo(400,400);
-        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(false,false,0,0,0,0,"",true));
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(false,false,0,0,0,0,"",false));
         var result=analyze(photo,input());
         assertEquals(Status.SCREEN_NOT_FOUND,result.status());
         assertEquals(Position.UNKNOWN,result.hands().get(0).position());
         assertNull(result.screen());
-        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,false,.2,.2,.5,.5,"",true));
-        assertEquals(Status.SCREEN_UNCERTAIN,analyze(photo,input()).status());
+        assertNull(result.clear(), "화면 미검출을 화질 불량으로 취급하지 않는다");
+        when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(true,false,.2,.2,.5,.5,"",false));
+        var uncertain = analyze(photo,input());
+        assertEquals(Status.SCREEN_UNCERTAIN,uncertain.status());
+        assertNull(uncertain.clear());
     }
 
     @Test void modelOutageAndInvalidBoundsReturn503() throws Exception {
