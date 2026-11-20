@@ -78,7 +78,10 @@ public final class TrueshotDtos {
                     example = "REQUEST_TIMEOUT",
                     nullable = true
             )
-            String failureCode
+            String failureCode,
+
+            @Schema(description = "판매자가 인증 사진을 공유한 시각. 공유 전 또는 공유하지 않고 종료한 경우 null", nullable = true)
+            OffsetDateTime photosSharedAt
     ) {
         public static RequestSummary from(
                 TrueshotRequest request,
@@ -93,7 +96,8 @@ public final class TrueshotDtos {
                     effectivePhase(request, now),
                     request.getCreatedAt(),
                     request.getExpiresAt(),
-                    failure == null ? null : failure.name()
+                    failure == null ? null : failure.name(),
+                    request.getPhotosSharedAt()
             );
         }
     }

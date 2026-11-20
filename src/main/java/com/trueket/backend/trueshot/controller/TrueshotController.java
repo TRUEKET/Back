@@ -71,6 +71,10 @@ public class TrueshotController {
 
                 시간 초과로 인한 실패와 일반 인증 실패를
                 failureCode를 통해 구분할 수 있습니다.
+
+                photosSharedAt은 판매자가 인증 사진을 공유한 시각입니다.
+                공유 대기 중이거나 공유하지 않고 종료한 경우 null입니다.
+                phase가 COMPLETED이고 photosSharedAt이 null이면 사진 미공유 종료입니다.
                 """
     )
     @ApiResponse(responseCode = "200", description = "요청 목록 조회 완료")
