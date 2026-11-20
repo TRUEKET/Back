@@ -100,7 +100,9 @@ JUDGING이면 사진을 재업로드하지 않고 result의 pollAfterMillis(기�
 
 ## 미션 비교
 
-- GESTURE: Victory + confidence ≥ 0.7.
+손별 결과에 `distanceToScreen`, `allowedDistance`(픽셀), `gestureMatched`, `positionMatched`를 추가한다. 거리·근접·동작·방향별 조건과 최종 `missionMatched`를 비교해 실패 원인을 구분할 수 있다. 브이 점수 기준은 0.5로 유지하며 적용되지 않거나 계산할 수 없는 조건은 null이다. 최종 판정 시 OCR 텍스트를 제외한 좌표와 이 결과를 `judgment_result.missionDiagnostics`에 저장한다. 상세 저장 계약은 [최종 판정·공유 API](trueshot-finalization-api.md)를 참고한다.
+
+- GESTURE: Victory + confidence ≥ 0.5.
 - POINT_SCREEN: 검지 끝과 화면 사각형의 최소 유클리드 거리가 화면 짧은 변의 10% 이내. 내부는 거리 0이다. Pointing_Up 분류를 강제하거나 손가락 방향 벡터를 검사하지 않는다.
 - GESTURE_POSITION: 같은 손에서 브이 조건과 LEFT/RIGHT/ABOVE/BELOW 조건을 모두 만족해야 한다. 화면 경계는 지정 방향으로 인정하지 않는다.
 
