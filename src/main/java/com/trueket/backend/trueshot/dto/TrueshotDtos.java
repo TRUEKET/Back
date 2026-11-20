@@ -8,6 +8,7 @@ import com.trueket.backend.trueshot.entity.TrueshotPhoto;
 import com.trueket.backend.trueshot.entity.enums.MaskStatus;
 import com.trueket.backend.trueshot.entity.enums.TrueshotPhase;
 import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
+import com.trueket.backend.trueshot.entity.enums.ShareEndReason;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -81,7 +82,10 @@ public final class TrueshotDtos {
             String failureCode,
 
             @Schema(description = "판매자가 인증 사진을 공유한 시각. 공유 전 또는 공유하지 않고 종료한 경우 null", nullable = true)
-            OffsetDateTime photosSharedAt
+            OffsetDateTime photosSharedAt,
+
+            @Schema(description = "사진 미공유 종료 사유. 공유 대기·공유 완료·인증 실패 및 원인을 기록하지 않은 과거 종료 건은 null", nullable = true)
+            ShareEndReason shareEndReason
     ) {
         public static RequestSummary from(
                 TrueshotRequest request,
@@ -97,7 +101,8 @@ public final class TrueshotDtos {
                     request.getCreatedAt(),
                     request.getExpiresAt(),
                     failure == null ? null : failure.name(),
-                    request.getPhotosSharedAt()
+                    request.getPhotosSharedAt(),
+                    request.shareEndReason(now)
             );
         }
     }
@@ -123,7 +128,8 @@ public final class TrueshotDtos {
             @Schema(description = "최종 판정 상세. 판정 전 null") Map<String,Object> judgmentResult,
             @Schema(description = "조회 가능한 사진 정보 목록") List<PhotoLink> photos,
             @Schema(description = "실패 코드. REQUEST_TIMEOUT, FIRST_PHOTO_TIMEOUT, SECOND_PHOTO_TIMEOUT, ANALYSIS_TIMEOUT, VERIFICATION_FAILED") String failureCode,
-            @Schema(description = "응답을 생성한 서버 시각") OffsetDateTime serverTime
+            @Schema(description = "응답을 생성한 서버 시각") OffsetDateTime serverTime,
+            @Schema(description = "사진 미공유 종료 사유. SHARE_TIMEOUT, MASK_FAILED, DECLINED. 미종료·공유 완료·과거 원인 불명은 null", nullable = true) ShareEndReason shareEndReason
     ) {
         public static RequestDetail from(TrueshotRequest request, OffsetDateTime now) {
             return from(request, now, List.of());
@@ -139,7 +145,7 @@ public final class TrueshotDtos {
                     request.getDeadline1(), request.getDeadline2(), request.getPhotosSharedAt(), reasons,
                     request.getJudgedAt(), request.getJudgedAt()==null || request.getJudgmentResult()==null ? null : JSON.convertValue(request.getJudgmentResult(),
                             new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {}), photos,
-                    request.failureCode(now)==null?null:request.failureCode(now).name(),now);
+                    request.failureCode(now)==null?null:request.failureCode(now).name(),now,request.shareEndReason(now));
         }
     }
 
@@ -194,7 +200,8 @@ public final class TrueshotDtos {
             @Schema(description = "응답을 생성한 서버 시각") OffsetDateTime serverTime,
             @Schema(description = "조회 가능한 사진 정보 목록") List<SellerPhoto> photos,
             @Schema(description = "현재 단계의 마감 시각. 촬영·판정 기한과 전체 요청 기한 중 빠른 시각이며 종료 상태는 null") OffsetDateTime activeDeadline,
-            @Schema(description = "서버 시각 기준 남은 시간(ms). 새로고침으로 초기화되지 않으며 종료 상태는 null") Long remainingMillis
+            @Schema(description = "서버 시각 기준 남은 시간(ms). 새로고침으로 초기화되지 않으며 종료 상태는 null") Long remainingMillis,
+            @Schema(description = "사진 미공유 종료 사유. SHARE_TIMEOUT, MASK_FAILED, DECLINED. 미종료·공유 완료·과거 원인 불명은 null", nullable = true) ShareEndReason shareEndReason
     ) {
         public static SellerResult from(TrueshotRequest request, OffsetDateTime now, boolean masksReady) {
             return build(request,now,masksReady,List.of());
@@ -232,7 +239,7 @@ public final class TrueshotDtos {
                     TrueshotChecks.result(request,finished),reasons,request.getJudgmentDeadline(),
                     phase==TrueshotPhase.JUDGING?2000L:null,failureCode,
                     request.getTitle(),request.getCode(),request.getInstruction2(),request.getMission2(),
-                    request.getExpiresAt(),request.getDeadline1(),request.getDeadline2(),now,photos,activeDeadline,remainingMillis);
+                    request.getExpiresAt(),request.getDeadline1(),request.getDeadline2(),now,photos,activeDeadline,remainingMillis,request.shareEndReason(now));
         }
     }
 

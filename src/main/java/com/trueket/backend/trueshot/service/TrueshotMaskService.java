@@ -57,11 +57,16 @@ public class TrueshotMaskService {
         byte[] original=storage.original(photo.getOriginalStorageKey());
         var detection=detector.detect(original);
         validate.run();
-        if (!detection.complete() || detection.boxes()==null || detection.boxes().isEmpty()
-                || detection.boxes().stream().anyMatch(box -> box==null || !box.valid())) {
+        if (!validDetection(detection)) {
+            // 불확실한 탐지나 잘못된 좌표는 종료하기 전에 한 번 더 확인한다.
+            detection=detector.detect(original);
+            validate.run();
+        }
+        if (!validDetection(detection)) {
             photo.maskingFailed();
             return;
         }
+        // complete=true인 빈 영역도 재인코딩한 별도 파일로 저장한다. 원본 키는 공개하지 않는다.
         byte[] masked=renderer.render(original,detection.boxes());
         String key="trueshots/"+photo.getRequest().getId()+"/"+UUID.randomUUID()+".jpg";
         storage.saveMasked(key,masked);
@@ -69,6 +74,11 @@ public class TrueshotMaskService {
         boxes.set("automatic",json.valueToTree(detection.boxes()));
         boxes.set("seller",json.createArrayNode());
         photo.maskingReady(key,boxes);
+    }
+
+    private boolean validDetection(TrueshotMaskDetector.Detection detection) {
+        return detection!=null && detection.complete() && detection.boxes()!=null
+                && detection.boxes().stream().allMatch(box -> box!=null && box.valid());
     }
 
     @Transactional(readOnly=true)

@@ -395,6 +395,23 @@ class TrueshotRequestApiTests {
     }
 
     @Test
+    void firstPhotoWithNoSensitiveRegionsStillProvidesReadyPreview() throws Exception {
+        var f=startedRequest();
+        when(checker.check(anyString(),any())).thenReturn(new TrueshotFirstPhotoChecker.Result(true,true,true));
+        mvc.perform(multipart(f.path()+"/photo").file(photo()).param("n","1").session(f.seller().session())
+                .header(f.seller().csrf().getHeaderName(),f.seller().csrf().getToken()))
+                .andExpect(status().isOk());
+        when(maskStorage.original(anyString())).thenReturn(photo().getBytes());
+        when(maskStorage.masked(anyString())).thenReturn(photo().getBytes());
+        when(maskDetector.detect(any())).thenReturn(new TrueshotMaskDetector.Detection(true,List.of()));
+        mvc.perform(post(f.path()+"/mask").session(f.seller().session())
+                .header(f.seller().csrf().getHeaderName(),f.seller().csrf().getToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.maskStatus").value("READY"));
+        mvc.perform(get(f.path()+"/preview/1").session(f.seller().session())).andExpect(status().isOk());
+        verify(maskStorage).saveMasked(anyString(),any());
+    }
+
+    @Test
     void incompleteMaskNeverExposesPreviewAndAllowsResultOnlyFlow() throws Exception {
         Browser buyer=buyer();
         var created=mvc.perform(post("/trueshot").session(buyer.session())

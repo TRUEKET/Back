@@ -44,9 +44,11 @@
 
 ### `GET /trueshot`
 
-내 요청을 최신순 배열로 반환한다. 항목은 `id`, `title`, `status`, `phase`, `createdAt`, `expiresAt`, `failureCode`, `photosSharedAt`이다. 30분 요청 기한이 지나면 주기 작업 전 조회에서도 실패 상태로 보인다.
+내 요청을 최신순 배열로 반환한다. 항목은 `id`, `title`, `status`, `phase`, `createdAt`, `expiresAt`, `failureCode`, `photosSharedAt`, `shareEndReason`이다. 30분 요청 기한이 지나면 주기 작업 전 조회에서도 실패 상태로 보인다.
 
 `photosSharedAt`은 판매자가 인증 사진을 공유한 시각이며 공유 전에는 `null`이다. `phase=COMPLETED`이고 `photosSharedAt=null`이면 사진을 공유하지 않고 종료한 경우다. `SHARE_WAITING`의 `null`은 아직 공유 대기 중이므로 미전송 종료로 표시하지 않는다. 사진 미공유 여부로 인증 판정 `status` 자체를 변경하지는 않는다.
+
+목록·구매자 상세·판매자 결과의 `shareEndReason`은 사진 미공유 종료 사유다. `SHARE_TIMEOUT`은 공유 기한 만료, `MASK_FAILED`는 두 사진 중 가림 미완료로 공유 불가, `DECLINED`는 판매자 공유 거절이다. 공유 대기·공유 완료·인증 판정 실패에서는 `null`이다. 기존 판정 JSON에 저장하므로 DB 컬럼 변경은 없으며, 과거 원인 미기록 종료 건은 추정하지 않고 `null`로 반환한다. 공유 기한이 지난 대기 건은 주기 작업 전 조회에서도 `SHARE_TIMEOUT`이다.
 
 ### `GET /trueshot/{id}`
 
@@ -55,7 +57,7 @@
 ```text
 id, title, code, sellerPath, status, phase, instruction2, mission2,
 createdAt, expiresAt, startedAt, deadline1, deadline2,
-photosSharedAt, failReasons, judgedAt, judgmentResult, photos
+photosSharedAt, failReasons, judgedAt, judgmentResult, photos, failureCode, serverTime, shareEndReason
 ```
 
 `sellerPath`는 `/s/{token}` 상대 경로다. `instruction2`는 두 번째 촬영을 시작하기 전까지 null이다. 다른 구매자의 요청은 `404`다.
@@ -142,7 +144,9 @@ photo: 사진 파일 1개 (File)
 {"maskStatus":"READY","previewPath":"/s/{token}/preview/1","message":"가린 사진을 확인하고 필요하면 더 가려 주세요."}
 ```
 
-탐지 불확실·영역 없음·좌표 오류이면 `maskStatus: FAILED`, `previewPath: null`이다. 이 경우 가리지 않은 사진을 대신 제공하지 않는다. OpenAI·Storage 연결 오류는 `503`이며 재시도할 수 있다.
+`complete=true`이고 영역이 비어 있으면 가릴 정보가 없는 정상 결과다. 사진을 JPEG로 재인코딩해 별도 가림 파일에 저장하고 `maskStatus: READY`로 처리한다. 원본 Storage 경로를 노출하거나 구매자에게 즉시 공유하지 않으며, 판매자는 기존 미리보기와 수동 추가 가림·공유 동의 흐름을 사용한다.
+
+탐지 불확실(`complete=false`)·잘못된 응답·좌표 오류는 현재 단계의 기한 안에서 한 번 더 탐지한다. 두 번 모두 불확실하면 `maskStatus: FAILED`, `previewPath: null`이며 가리지 않은 사진을 대신 제공하지 않는다. 1·2차 사진에 같은 규칙을 적용한다. OpenAI·Storage 연결 오류는 기존처럼 `503`이며 재시도할 수 있다. 2차는 기존 JUDGING 기한 내 재시도 흐름을 따른다.
 
 ### `GET /s/{token}/preview/1`
 
