@@ -54,12 +54,12 @@
 
 ## 미션 판정
 
-세 유형을 같은 확률로 선택하며 위치 미션의 네 방향도 같은 확률로 선택한다.
+신규 발급은 GESTURE와 GESTURE_POSITION 두 유형을 같은 확률로 선택하며 위치 미션의 네 방향도 같은 확률로 선택한다. POINT_SCREEN은 신규 발급하지 않고 기존 발급 건 판정·조회만 지원한다.
 
 | type | 조건 |
 | --- | --- |
 | GESTURE | Victory, confidence ≥ 0.5 |
-| POINT_SCREEN | 검지 끝이 화면 내부 또는 화면 짧은 변의 10% 거리 이내 |
+| POINT_SCREEN (기존 발급 건만) | 검지 끝이 화면 내부 또는 화면 짧은 변의 10% 거리 이내 |
 | GESTURE_POSITION | 같은 손의 Victory, confidence ≥ 0.5 및 지정한 LEFT/RIGHT/ABOVE/BELOW 방향 |
 
 화면 경계는 방향 조건을 만족하지 않는다. 화면이 없거나 불확실하면 통과시키지 않는다. 2차 사진이 흐리면 미션이 일치해도 실패다. 가리키기는 검지 끝의 근접 여부를 비교하며 손가락 방향 벡터나 Pointing_Up 분류를 요구하지 않는다.

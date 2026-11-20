@@ -162,7 +162,7 @@ photo: 사진 파일 1개 (File)
 
 서버는 자동 가림 사진 위에만 덧칠한다. 자동 가림을 삭제하는 입력이나 원본 재업로드는 받지 않는다. 확인 후 `SECOND_WAITING`으로 바꾸고 미션을 공개한다.
 
-2차 미션은 브이 따라 하기(`GESTURE`), 화면 가리키기(`POINT_SCREEN`), 브이+4방향(`GESTURE_POSITION`) 중 하나다. 종류를 무작위 선택하고 위치 미션에서는 `LEFT/RIGHT/ABOVE/BELOW` 중 하나를 선택한다. 브이 외 손 모양은 미션으로 생성하지 않는다.
+새로 발급하는 2차 미션은 브이 따라 하기(`GESTURE`), 브이+4방향(`GESTURE_POSITION`) 중 하나다. 두 종류를 같은 확률로 선택하고 위치 미션에서는 `LEFT/RIGHT/ABOVE/BELOW` 중 하나를 선택한다. 손 인식 누락이 많은 화면 가리키기(`POINT_SCREEN`)는 신규 발급에서 제외한다. 이미 발급된 가리키기 미션은 기존 안내·판정·조회 호환성을 유지하며 변경하지 않는다.
 
 ```json
 {"instruction2":"브이를 예매 화면 왼쪽에 두고 찍어 주세요.","mission2":{"type":"GESTURE_POSITION","gesture":"Victory","position":"LEFT"},"deadline2":"2026-11-13T12:05:00Z","expiresAt":"2026-11-13T12:30:00Z"}

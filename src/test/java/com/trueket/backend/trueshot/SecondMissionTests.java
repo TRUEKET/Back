@@ -23,11 +23,23 @@ class SecondMissionTests {
 
     @Test void generationUsesOnlyConfirmedMissionTypesAndVictory() {
         var service=new SecondMissionService();
-        for (int i=0;i<30;i++) {
+        for (int i=0;i<100;i++) {
             var mission=service.generate();
             assertEquals(mission,SecondMission.of(mission.type(),mission.position()));
-            assertTrue(mission.gesture()==null || mission.gesture().equals("Victory"));
+            assertTrue(mission.type()==Type.GESTURE || mission.type()==Type.GESTURE_POSITION);
+            assertEquals("Victory",mission.gesture());
         }
+    }
+
+    @Test void alreadyIssuedPointingMissionKeepsItsOriginalInstruction() {
+        var now=OffsetDateTime.now();
+        var request=TrueshotRequest.create(null,"title","AB12","token",now);
+        request.start(now);
+        request.firstPhotoAccepted(now);
+        var mission=SecondMission.of(Type.POINT_SCREEN,null);
+        request.revealSecondInstruction(mission,now);
+        assertEquals(Type.POINT_SCREEN,request.getMission2().type());
+        assertEquals("손가락으로 예매 화면을 가리켜 주세요.",request.getInstruction2());
     }
 
     @Test void revealedMissionStoresTypePositionAndInstruction() {
