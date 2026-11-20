@@ -17,6 +17,19 @@ class TrueshotRecoveryTests {
         return TrueshotRequest.create(null,"인증","AB12","test-token",start);
     }
 
+    @Test void oldCompletedRecordsDoNotInventSharingEndReason() {
+        var request=request();
+        request.start(start);
+        request.firstPhotoAccepted(start.plusSeconds(10));
+        request.revealSecondInstruction(SecondMission.of(SecondMission.Type.GESTURE,null),start.plusSeconds(20));
+        request.secondPhotoReceived(start.plusSeconds(30),Duration.ofSeconds(60));
+        request.finishJudgment(true,true,List.of(),start.plusSeconds(40));
+        request.finishSharing(false,start.plusSeconds(50));
+        org.springframework.test.util.ReflectionTestUtils.setField(request,"judgmentResult",null);
+        assertNull(request.shareEndReason(start.plusHours(1)));
+        assertNull(RequestDetail.from(request,start.plusHours(1)).shareEndReason());
+    }
+
     @Test void refreshUsesOriginalFirstPhotoDeadlineAndServerTime() {
         var request=request();
         request.start(start);

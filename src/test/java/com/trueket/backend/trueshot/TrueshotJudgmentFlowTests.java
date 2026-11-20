@@ -6,6 +6,7 @@ import com.trueket.backend.global.storage.SupabaseStorageDeletion;
 import com.trueket.backend.trueshot.dto.SecondMission;
 import com.trueket.backend.trueshot.dto.TrueshotMaskDtos.Box;
 import com.trueket.backend.trueshot.entity.*;
+import com.trueket.backend.trueshot.entity.enums.MaskStatus;
 import com.trueket.backend.trueshot.repository.*;
 import com.trueket.backend.trueshot.service.*;
 import com.trueket.backend.user.entity.User;
@@ -97,6 +98,7 @@ class TrueshotJudgmentFlowTests {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("COMPLETED"));
         var sharedAt=requests.findById(f.id()).orElseThrow().getPhotosSharedAt();
         assertNotNull(sharedAt);
+        assertShareEndReason(f,null);
         var listResponse = mvc.perform(get("/trueshot").session(f.buyer().session()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].phase").value("COMPLETED"))
@@ -358,11 +360,45 @@ class TrueshotJudgmentFlowTests {
         }
     }
 
+    @Test void emptyConfirmedMaskCanBePreviewedManuallyMaskedAndShared() throws Exception {
+        var f=fixture(true);
+        when(masks.detect(any())).thenReturn(new TrueshotMaskDetector.Detection(true,List.of()));
+        submit(f,analysis(true)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        var second=photos.findByRequestIdAndNumber(f.id(),(short)2).orElseThrow();
+        assertEquals(MaskStatus.READY,second.getMaskStatus());
+        assertTrue(second.getMaskBoxes().path("automatic").isEmpty());
+        assertNotNull(second.getMaskedImage());
+        assertShareEndReason(f,null);
+        buyerPhoto(f,2,f.buyer()).andExpect(status().isNotFound());
+        mvc.perform(get(f.path()+"/preview/2").session(f.seller().session()))
+                .andExpect(status().isOk());
+        mvc.perform(get(f.path()+"/preview/2").session(buyer().session()))
+                .andExpect(status().isForbidden());
+        share(f,true,"[{\"x\":0.1,\"y\":0.1,\"width\":0.2,\"height\":0.2}]")
+                .andExpect(status().isOk());
+        buyerPhoto(f,2,f.buyer()).andExpect(status().isOk());
+        assertShareEndReason(f,null);
+        verify(masks,times(1)).detect(any());
+    }
+
+    @Test void uncertainMaskRetriesOnceAndCanRecoverWithoutEndingSharing() throws Exception {
+        var f=fixture(true);
+        when(masks.detect(any())).thenReturn(new TrueshotMaskDetector.Detection(false,List.of()),
+                new TrueshotMaskDetector.Detection(true,List.of(new Box(.1,.1,.1,.1))));
+        submit(f,analysis(true)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        verify(masks,times(2)).detect(any());
+        assertShareEndReason(f,null);
+    }
+
     @Test void incompleteMaskAllowsResultOnlyAndNeverExposesOriginal() throws Exception {
         var f=fixture(true);
         when(masks.detect(any())).thenReturn(new TrueshotMaskDetector.Detection(false,List.of()));
         submit(f,analysis(true)).andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("COMPLETED"));
         assertEquals("PASSED",requests.findById(f.id()).orElseThrow().getStatus().name());
+        assertShareEndReason(f,"MASK_FAILED");
+        verify(masks,times(2)).detect(any());
         mvc.perform(get(f.path()+"/result").session(f.seller().session())).andExpect(jsonPath("$.canShare").value(false));
         buyerDetail(f).andExpect(jsonPath("$.photos").isEmpty());
         buyerPhoto(f,1,f.buyer()).andExpect(status().isNotFound());
@@ -430,6 +466,7 @@ class TrueshotJudgmentFlowTests {
         submit(f,analysis(true)).andExpect(status().isOk());
         share(f,false,"[]").andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("COMPLETED"));
         assertNull(requests.findById(f.id()).orElseThrow().getPhotosSharedAt());
+        assertShareEndReason(f,"DECLINED");
         buyerPhoto(f,1,f.buyer()).andExpect(status().isNotFound());
         mvc.perform(get("/trueshot").session(f.buyer().session()))
                 .andExpect(status().isOk())
@@ -440,9 +477,11 @@ class TrueshotJudgmentFlowTests {
         var expired=fixture(true);
         submit(expired,analysis(true)).andExpect(status().isOk());
         jdbc.update("update trueshot_requests set expires_at=? where id=?",OffsetDateTime.now().minusSeconds(1),expired.id());
+        assertShareEndReason(expired,"SHARE_TIMEOUT");
         share(expired,true,"[]").andExpect(status().isGone());
         assertEquals("COMPLETED",requests.findById(expired.id()).orElseThrow().getPhase().name());
         assertNull(requests.findById(expired.id()).orElseThrow().getPhotosSharedAt());
+        assertShareEndReason(expired,"SHARE_TIMEOUT");
         mvc.perform(get("/trueshot").session(expired.buyer().session()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].phase").value("COMPLETED"))
@@ -641,6 +680,17 @@ class TrueshotJudgmentFlowTests {
                 .header(f.seller().csrf().getHeaderName(),f.seller().csrf().getToken());
         if (body!=null) builder.contentType("application/json").content(body);
         return mvc.perform(builder);
+    }
+    private void assertShareEndReason(Fixture f,String reason) throws Exception {
+        var expected=reason==null?org.hamcrest.Matchers.nullValue():org.hamcrest.Matchers.is(reason);
+        mvc.perform(get("/trueshot").session(f.buyer().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].shareEndReason").hasJsonPath())
+                .andExpect(jsonPath("$[0].shareEndReason").value(expected));
+        buyerDetail(f).andExpect(status().isOk()).andExpect(jsonPath("$.shareEndReason").hasJsonPath())
+                .andExpect(jsonPath("$.shareEndReason").value(expected));
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.shareEndReason").hasJsonPath())
+                .andExpect(jsonPath("$.shareEndReason").value(expected));
     }
     private ResultActions buyerDetail(Fixture f) throws Exception { return mvc.perform(get("/trueshot/"+f.id()).session(f.buyer().session())); }
     private ResultActions buyerPhoto(Fixture f,int n,Browser buyer) throws Exception {

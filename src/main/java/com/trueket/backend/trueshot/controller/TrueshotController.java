@@ -75,6 +75,8 @@ public class TrueshotController {
                 photosSharedAt은 판매자가 인증 사진을 공유한 시각입니다.
                 공유 대기 중이거나 공유하지 않고 종료한 경우 null입니다.
                 phase가 COMPLETED이고 photosSharedAt이 null이면 사진 미공유 종료입니다.
+                shareEndReason은 SHARE_TIMEOUT(공유 기한 만료), MASK_FAILED(가림 실패),
+                DECLINED(판매자 공유 거절)이며 과거 원인 미기록 건은 null입니다.
                 """
     )
     @ApiResponse(responseCode = "200", description = "요청 목록 조회 완료")
