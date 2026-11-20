@@ -51,6 +51,10 @@
 
 ## 가림 미리보기·사진 공유
 
+자동 가림은 `complete=true, boxes=[]`도 정상 완료로 처리한다. 가릴 영역이 없는 사진은 JPEG로 재인코딩한 별도 파일을 READY로 저장한다. `complete=false` 또는 잘못된 좌표는 현재 단계 기한 내 한 번 추가 탐지하고, 계속 불확실하면 FAILED로 비공개 처리한다. 탐지 불확실 사진의 원본 미리보기는 제공하지 않는다.
+
+목록·구매자 상세·판매자 결과는 `shareEndReason`을 반환한다. `MASK_FAILED`(가림 실패로 공유 불가), `DECLINED`(판매자 공유 거절), `SHARE_TIMEOUT`(공유 기한 만료)을 구분하며 인증 판정 status는 유지한다. 대기·공유 완료·인증 실패 및 과거 원인 미기록 건은 null이다. 원인은 기존 judgment_result JSON에 보존하므로 DB 스키마 변경은 없다.
+
 `GET /s/{token}/preview/1`, `GET /s/{token}/preview/2`에서 가린 JPEG만 반환한다. 첫 사진 가림 단계에서는 1번만, SHARE_WAITING에서는 두 사진을 볼 수 있다. 원본 다운로드 경로는 제공하지 않는다.
 
 `POST /s/{token}/share`, JSON:
@@ -152,7 +156,7 @@ retryReasons는 첫 사진 재촬영 안내, failReasons는 해당 응답의 실
 ```text
 status, phase, judgedAt, photosSharedAt, canShare, message, checks, failReasons,
 judgmentDeadline, pollAfterMillis, failureCode, title, code, instruction2, mission2,
-expiresAt, deadline1, deadline2, serverTime, photos, activeDeadline, remainingMillis
+expiresAt, deadline1, deadline2, serverTime, photos, activeDeadline, remainingMillis, shareEndReason
 ```
 
 | 필드 | 의미 |
@@ -165,6 +169,7 @@ expiresAt, deadline1, deadline2, serverTime, photos, activeDeadline, remainingMi
 | activeDeadline | 현재 단계의 마감. 촬영·판정 기한과 전체 요청 마감 중 빠른 값. 종료 상태는 null |
 | remainingMillis | serverTime부터 activeDeadline까지 남은 밀리초. 종료 상태는 null |
 | photos | 접수된 사진별 number, maskStatus, previewPath 목록 |
+| shareEndReason | 미공유 종료 사유: SHARE_TIMEOUT, MASK_FAILED, DECLINED. 공유 대기·공유 완료·인증 실패·과거 원인 미기록은 null |
 
 FIRST_MASKING 단계의 복구 필드 예시:
 

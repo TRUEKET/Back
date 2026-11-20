@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.trueket.backend.trueshot.entity.enums.TrueshotPhase;
 import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
 import com.trueket.backend.trueshot.entity.enums.TrueshotFailureCode;
+import com.trueket.backend.trueshot.entity.enums.ShareEndReason;
 import com.trueket.backend.user.entity.User;
 import com.trueket.backend.trueshot.dto.SecondMission;
 import jakarta.persistence.Column;
@@ -162,6 +163,7 @@ public class TrueshotRequest {
         ArrayNode failures = JsonNodeFactory.instance.arrayNode();
         reasons.forEach(failures::add);
         failReasons = failures;
+        if (passed && !shareable) storeShareEndReason(ShareEndReason.MASK_FAILED);
     }
 
     public void finishSharing(boolean share, OffsetDateTime now) {
@@ -169,7 +171,27 @@ public class TrueshotRequest {
             throw new IllegalStateException("사진을 공유할 수 없는 단계입니다.");
         }
         if (share) photosSharedAt = now;
+        else storeShareEndReason(ShareEndReason.DECLINED);
         phase = TrueshotPhase.COMPLETED;
+    }
+
+    // 기존 판정 JSON에 저장하므로 DB 컬럼 추가가 필요하지 않다.
+    private void storeShareEndReason(ShareEndReason reason) {
+        var result = judgmentResult!=null && judgmentResult.isObject()
+                ? (com.fasterxml.jackson.databind.node.ObjectNode) judgmentResult.deepCopy()
+                : JsonNodeFactory.instance.objectNode();
+        result.put("shareEndReason",reason.name());
+        judgmentResult=result;
+    }
+
+    public ShareEndReason shareEndReason(OffsetDateTime now) {
+        if (status!=TrueshotStatus.PASSED || photosSharedAt!=null) return null;
+        if (judgmentResult!=null && judgmentResult.path("shareEndReason").isTextual()) {
+            return ShareEndReason.valueOf(judgmentResult.path("shareEndReason").asText());
+        }
+        if (phase==TrueshotPhase.SHARE_WAITING && isExpired(now)) return ShareEndReason.SHARE_TIMEOUT;
+        // 예전 COMPLETED 기록은 원인을 추정하지 않는다.
+        return null;
     }
 
     // 판정은 성공했지만 판매자가 30분 안에 사진을 공유하지 않은 경우 null이다.
@@ -242,6 +264,7 @@ public class TrueshotRequest {
 
     public void closeShareWindow() {
         if (status == TrueshotStatus.PASSED && phase == TrueshotPhase.SHARE_WAITING) {
+            storeShareEndReason(ShareEndReason.SHARE_TIMEOUT);
             phase = TrueshotPhase.COMPLETED;
         }
     }
