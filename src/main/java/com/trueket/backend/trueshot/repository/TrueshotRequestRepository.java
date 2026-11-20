@@ -25,6 +25,10 @@ public interface TrueshotRequestRepository extends JpaRepository<TrueshotRequest
 
     Optional<TrueshotRequest> findByIdAndUserId(Long id, Long userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select request from TrueshotRequest request where request.id = :id and request.user.id = :userId")
+    Optional<TrueshotRequest> findByIdAndUserIdForUpdate(Long id, Long userId);
+
     Optional<TrueshotRequest> findByToken(String token);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

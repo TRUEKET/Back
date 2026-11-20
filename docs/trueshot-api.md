@@ -16,13 +16,14 @@
 - 응답은 `Cache-Control: no-store`다. 시각은 서버가 정한 ISO 8601 값이며 타이머는 반환된 마감 시각을 사용한다.
 - 사진은 JPEG·PNG만, 최대 5MB(5 × 1024 × 1024바이트)다. 실제 형식과 해상도(가로·세로 각각 320픽셀 이상, 전체 4천만 픽셀 이하)를 검사하고 JPEG로 변환한다.
 
-## API 목록 (12개)
+## API 목록 (13개)
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
 | POST | `/trueshot` | 구매자 요청 생성 |
 | GET | `/trueshot` | 내 요청 목록 |
 | GET | `/trueshot/{id}` | 내 요청 상세·진행 상황 |
+| PATCH | `/trueshot/{id}` | 내 요청 제목 수정 |
 | GET | `/trueshot/{id}/photos/{number}` | 구매자용 공유된 가림 사진 |
 | GET | `/s/{token}` | 판매자 시작 전 안내 |
 | POST | `/s/{token}/start` | 동의 기록·첫 촬영 시작 |
@@ -56,6 +57,22 @@ photosSharedAt, failReasons, judgedAt, judgmentResult, photos
 ```
 
 `sellerPath`는 `/s/{token}` 상대 경로다. `instruction2`는 두 번째 촬영을 시작하기 전까지 null이다. 다른 구매자의 요청은 `404`다.
+
+### `PATCH /trueshot/{id}`
+
+로그인한 구매자 본인의 요청 제목을 수정한다. 세션 쿠키와 `GET /auth/csrf`로 받은 CSRF 헤더가 필요하다.
+
+```http
+PATCH /trueshot/1
+Content-Type: application/json
+X-CSRF-TOKEN: 발급받은 토큰
+
+{"title":"DAY6 티켓 인증"}
+```
+
+제목은 필수이며 최대 20자다. 누락·null·빈 문자열·공백만 입력·20자 초과는 400이며, 앞뒤 공백은 저장 시 제거한다. 길이는 공백 제거 전 입력을 기준으로 검사한다. 다른 구매자의 요청과 없는 요청은 모두 404, 미로그인은 401, CSRF 누락·불일치는 403이다.
+
+성공 시 **200과 `GET /trueshot/{id}`와 동일한 요청 상세 JSON**을 반환한다. 프론트는 응답의 `title`로 화면을 갱신하면 된다. 대기·인증 진행·성공·실패·만료 상태에서 모두 수정할 수 있다. 인증코드·판매자 링크·상태·촬영 및 공유 기한은 변경하지 않는다. DB 스키마 변경은 없다.
 
 ## 2. 판매자 시작
 

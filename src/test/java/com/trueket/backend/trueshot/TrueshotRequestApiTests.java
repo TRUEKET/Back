@@ -62,6 +62,87 @@ class TrueshotRequestApiTests {
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
+    void ownerCanRenameStartedRequestWithoutChangingAuthenticationState() throws Exception {
+        var f = startedRequest();
+        var before = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(mvc.perform(
+                get("/trueshot/{id}", f.id()).session(f.buyer().session()))
+                .andReturn().getResponse().getContentAsString());
+        var response = mvc.perform(patch("/trueshot/{id}", f.id()).session(f.buyer().session())
+                        .header(f.buyer().csrf().getHeaderName(), f.buyer().csrf().getToken())
+                        .contentType("application/json").content("{\"title\":\"  DAY6 티켓 인증  \"}"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.title").value("DAY6 티켓 인증"))
+                .andReturn().getResponse();
+        var after = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(response.getContentAsString());
+        before.remove(List.of("title", "serverTime"));
+        after.remove(List.of("title", "serverTime"));
+        assertEquals(before, after);
+        assertEquals("DAY6 티켓 인증", requests.findById(f.id()).orElseThrow().getTitle());
+        mvc.perform(get("/trueshot").session(f.buyer().session()))
+                .andExpect(jsonPath("$[0].title").value("DAY6 티켓 인증"));
+        mvc.perform(get(f.path() + "/result").session(f.seller().session()))
+                .andExpect(jsonPath("$.title").value("DAY6 티켓 인증"));
+    }
+
+    @Test
+    void renameValidatesRequiredTitleAndTwentyCharacterBoundary() throws Exception {
+        var f = startedRequest();
+        String original = requests.findById(f.id()).orElseThrow().getTitle();
+        for (String body : List.of("{}", "{\"title\":null}", "{\"title\":\"\"}",
+                "{\"title\":\"   \"}", json.writeValueAsString(java.util.Map.of("title", "가".repeat(21))))) {
+            mvc.perform(patch("/trueshot/{id}", f.id()).session(f.buyer().session())
+                            .header(f.buyer().csrf().getHeaderName(), f.buyer().csrf().getToken())
+                            .contentType("application/json").content(body))
+                    .andExpect(status().isBadRequest());
+            assertEquals(original, requests.findById(f.id()).orElseThrow().getTitle());
+        }
+        mvc.perform(patch("/trueshot/{id}", f.id()).session(f.buyer().session())
+                        .header(f.buyer().csrf().getHeaderName(), f.buyer().csrf().getToken())
+                        .contentType("application/json")
+                        .content(json.writeValueAsString(java.util.Map.of("title", "가".repeat(20)))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("가".repeat(20)));
+    }
+
+    @Test
+    void renameRequiresOwnerLoginAndCsrfWithoutRevealingOtherRequests() throws Exception {
+        var f = startedRequest();
+        var other = buyer();
+        var anonymous = anonymous();
+        for (long id : new long[]{f.id(), Long.MAX_VALUE}) {
+            mvc.perform(patch("/trueshot/{id}", id).session(other.session())
+                            .header(other.csrf().getHeaderName(), other.csrf().getToken())
+                            .contentType("application/json").content("{\"title\":\"수정\"}"))
+                    .andExpect(status().isNotFound());
+        }
+        mvc.perform(patch("/trueshot/{id}", f.id()).session(anonymous.session())
+                        .header(anonymous.csrf().getHeaderName(), anonymous.csrf().getToken())
+                        .contentType("application/json").content("{\"title\":\"수정\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(patch("/trueshot/{id}", f.id()).session(f.buyer().session())
+                        .contentType("application/json").content("{\"title\":\"수정\"}"))
+                .andExpect(status().isForbidden());
+        assertEquals("요청 1", requests.findById(f.id()).orElseThrow().getTitle());
+    }
+
+    @Test
+    void renameRemainsAvailableAfterFailureAndExpiryWithoutExtendingDeadlines() throws Exception {
+        var f = startedRequest();
+        var expiredAt = OffsetDateTime.now().minusMinutes(1);
+        jdbc.update("update trueshot_requests set expires_at=? where id=?", expiredAt, f.id());
+        expiryJob.expireRequests();
+        var before = requests.findById(f.id()).orElseThrow();
+        mvc.perform(patch("/trueshot/{id}", f.id()).session(f.buyer().session())
+                        .header(f.buyer().csrf().getHeaderName(), f.buyer().csrf().getToken())
+                        .contentType("application/json").content("{\"title\":\"완료된 요청 이름\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("완료된 요청 이름"))
+                .andExpect(jsonPath("$.status").value("FAILED"));
+        var after = requests.findById(f.id()).orElseThrow();
+        assertEquals(before.getExpiresAt(), after.getExpiresAt());
+        assertEquals(before.getDeadline1(), after.getDeadline1());
+        assertEquals(before.getJudgmentResult(), after.getJudgmentResult());
+    }
+
+    @Test
     void buyerCreatesRequestAndSellerCanStartOnlyOnce() throws Exception {
         Browser buyer = buyer();
         var created = mvc.perform(post("/trueshot").session(buyer.session())

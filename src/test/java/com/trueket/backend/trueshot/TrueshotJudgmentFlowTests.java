@@ -212,6 +212,47 @@ class TrueshotJudgmentFlowTests {
         verify(masks,never()).detect(any());
     }
 
+    @Test void secondPhotoReceivedInTimeFinishesAfterShootingDeadline() throws Exception {
+        var f=fixture(true);
+        doAnswer(call -> {
+            // 수신 검사는 통과했고 원본 저장 중 촬영 기한이 지난 상황이다.
+            var request=requests.findById(f.id()).orElseThrow();
+            org.springframework.test.util.ReflectionTestUtils.setField(request,"deadline2",OffsetDateTime.now().minusSeconds(1));
+            return null;
+        }).when(originals).upload(anyString(),any(),anyString());
+
+        submit(f,analysis(true)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(true))
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        expiry.expireRequests();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PASSED"))
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"))
+                .andExpect(jsonPath("$.failureCode").isEmpty());
+        assertEquals(2,photos.findByRequestId(f.id()).size());
+    }
+
+    @Test void pendingSecondPhotoDoesNotReturnToShootingWhenItsDeadlineExpires() throws Exception {
+        var f=fixture(true);
+        when(screens.detect(any())).thenThrow(unavailable());
+        submit(f,analysis(true)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(true))
+                .andExpect(jsonPath("$.phase").value("JUDGING"));
+        jdbc.update("update trueshot_requests set deadline_2=? where id=?",OffsetDateTime.now().minusSeconds(1),f.id());
+
+        expiry.expireRequests();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"))
+                .andExpect(jsonPath("$.failureCode").isEmpty())
+                .andExpect(jsonPath("$.pollAfterMillis").value(2000));
+        doReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"",true)).when(screens).detect(any());
+        expiry.retryJudgments();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("SHARE_WAITING"))
+                .andExpect(jsonPath("$.failureCode").isEmpty());
+        verify(originals,times(1)).upload(anyString(),any(),anyString());
+    }
+
     @Test void modelOutageKeepsOneSubmissionAndRetriesStoredPhotoWithoutNewUpload() throws Exception {
         var f=fixture(true);
         when(screens.detect(any())).thenThrow(unavailable());
@@ -316,6 +357,30 @@ class TrueshotJudgmentFlowTests {
         buyerPhoto(f,1,f.buyer()).andExpect(status().isNotFound());
         buyerPhoto(f,2,f.buyer()).andExpect(status().isNotFound());
         assertTrue(photos.findByRequestId(f.id()).stream().allMatch(photo -> photo.getOriginalStorageKey()==null));
+    }
+
+    @Test void missingOrUncertainScreenDoesNotInventBlurryPhotoAndReasonSurvivesReload() throws Exception {
+        for (boolean found : List.of(false, true)) {
+            var f = fixture(true);
+            when(screens.detect(any())).thenReturn(new BookingScreenDetector.Detection(
+                    found, false, .3, .3, .4, .4, "", false));
+            String reason = found ? "두 번째 사진의 예매 화면을 확인할 수 없음" : "두 번째 사진에서 예매 화면을 찾지 못함";
+            submit(f, analysis(true)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.phase").value("FAILED"))
+                    .andExpect(jsonPath("$.checks[0].status").value("NOT_CHECKED"))
+                    .andExpect(jsonPath("$.checks[1].status").value("NOT_CHECKED"))
+                    .andExpect(jsonPath("$.failReasons.length()").value(1))
+                    .andExpect(jsonPath("$.failReasons[0]").value(reason));
+            mvc.perform(get(f.path() + "/result").session(f.seller().session()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.failureCode").value("VERIFICATION_FAILED"))
+                    .andExpect(jsonPath("$.checks[2].status").value("NOT_CHECKED"))
+                    .andExpect(jsonPath("$.checks[3].status").value("NOT_CHECKED"))
+                    .andExpect(jsonPath("$.failReasons.length()").value(1))
+                    .andExpect(jsonPath("$.failReasons[0]").value(reason));
+            assertTrue(requests.findById(f.id()).orElseThrow().getJudgmentResult().path("secondPhotoClear").isNull());
+        }
+        verify(masks, never()).detect(any());
     }
 
     @Test void blurrySecondPhotoFailsEvenWhenMissionMatchesAndChecksSurviveReload() throws Exception {
