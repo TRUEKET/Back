@@ -99,6 +99,8 @@ public class TrueshotJudgmentService {
             snapshot.put("secondPhotoClear",analysis.clear());
             snapshot.put("passed", reasons.isEmpty());
             snapshot.set("missionCheck",json.valueToTree(analysis.missionCheck()));
+            snapshot.set("missionDiagnostics",json.valueToTree(analysis.diagnostics(
+                    HandMissionEvaluator.MIN_GESTURE_CONFIDENCE,HandMissionEvaluator.MAX_SCREEN_DISTANCE_RATIO)));
             snapshot.set("failReasons",json.valueToTree(reasons));
             request.storeJudgment(snapshot);
         }

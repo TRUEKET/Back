@@ -28,12 +28,23 @@ public final class HandAnalysisDtos {
     public enum CheckStatus { MATCHED, NOT_MATCHED, UNDETERMINED, NOT_REQUESTED }
     public record Screen(double x, double y, double width, double height, String text) {}
     public record HandResult(double x, double y, String gesture, double confidence, Position position,
-                             VerticalPosition verticalPosition, Boolean nearScreen, Boolean missionMatched) {}
+                             VerticalPosition verticalPosition, Boolean nearScreen, Boolean missionMatched,
+                             Double distanceToScreen, Double allowedDistance,
+                             Boolean gestureMatched, Boolean positionMatched) {}
+    // OCR 원문을 제외한 업로드 이미지 픽셀 좌표만 판정 기록에 남긴다.
+    public record ScreenBounds(double x, double y, double width, double height) {}
+    public record MissionDiagnostics(int version, int imageWidth, int imageHeight, ScreenBounds screen,
+                                     double minGestureConfidence, double maxScreenDistanceRatio,
+                                     List<HandResult> hands) {}
     public record MissionCheck(SecondMission mission, CheckStatus status, List<Integer> matchedHandIndexes) {}
     public record Output(Status status, int imageWidth, int imageHeight, Screen screen,
                          List<HandResult> hands, MissionCheck missionCheck, Boolean clear) {
         public Output withQuality(boolean clear) {
             return new Output(status,imageWidth,imageHeight,screen,hands,missionCheck,clear);
+        }
+        public MissionDiagnostics diagnostics(double minGestureConfidence,double maxScreenDistanceRatio) {
+            var bounds=screen==null?null:new ScreenBounds(screen.x(),screen.y(),screen.width(),screen.height());
+            return new MissionDiagnostics(1,imageWidth,imageHeight,bounds,minGestureConfidence,maxScreenDistanceRatio,hands);
         }
     }
 }
