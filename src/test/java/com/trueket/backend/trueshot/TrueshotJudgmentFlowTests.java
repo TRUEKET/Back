@@ -86,12 +86,23 @@ class TrueshotJudgmentFlowTests {
                 .andExpect(jsonPath("$.photos[0].previewPath").value(f.path()+"/preview/1"))
                 .andExpect(jsonPath("$.photos[1].previewPath").value(f.path()+"/preview/2"));
         buyerDetail(f).andExpect(jsonPath("$.photos").isEmpty()).andExpect(jsonPath("$.judgmentResult.passed").value(true));
+        mvc.perform(get("/trueshot").session(f.buyer().session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].phase").value("SHARE_WAITING"))
+                .andExpect(jsonPath("$[0].photosSharedAt").hasJsonPath())
+                .andExpect(jsonPath("$[0].photosSharedAt").value(org.hamcrest.Matchers.nullValue()));
         buyerPhoto(f,1,f.buyer()).andExpect(status().isNotFound());
         mvc.perform(get(f.path()+"/preview/2").session(f.seller().session())).andExpect(status().isOk());
         share(f,true,"[{\"x\":0.6,\"y\":0.6,\"width\":0.1,\"height\":0.1}]")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("COMPLETED"));
         var sharedAt=requests.findById(f.id()).orElseThrow().getPhotosSharedAt();
         assertNotNull(sharedAt);
+        var listResponse = mvc.perform(get("/trueshot").session(f.buyer().session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].phase").value("COMPLETED"))
+                .andExpect(jsonPath("$[0].status").value("PASSED"))
+                .andReturn().getResponse().getContentAsString();
+        assertTrue(sharedAt.isEqual(OffsetDateTime.parse(json.readTree(listResponse).get(0).get("photosSharedAt").asText())));
         buyerDetail(f).andExpect(jsonPath("$.photos.length()").value(2));
         buyerPhoto(f,1,f.buyer()).andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store"));
         buyerPhoto(f,2,f.buyer()).andExpect(status().isOk());
@@ -420,12 +431,23 @@ class TrueshotJudgmentFlowTests {
         share(f,false,"[]").andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("COMPLETED"));
         assertNull(requests.findById(f.id()).orElseThrow().getPhotosSharedAt());
         buyerPhoto(f,1,f.buyer()).andExpect(status().isNotFound());
+        mvc.perform(get("/trueshot").session(f.buyer().session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].phase").value("COMPLETED"))
+                .andExpect(jsonPath("$[0].status").value("PASSED"))
+                .andExpect(jsonPath("$[0].photosSharedAt").hasJsonPath())
+                .andExpect(jsonPath("$[0].photosSharedAt").value(org.hamcrest.Matchers.nullValue()));
         var expired=fixture(true);
         submit(expired,analysis(true)).andExpect(status().isOk());
         jdbc.update("update trueshot_requests set expires_at=? where id=?",OffsetDateTime.now().minusSeconds(1),expired.id());
         share(expired,true,"[]").andExpect(status().isGone());
         assertEquals("COMPLETED",requests.findById(expired.id()).orElseThrow().getPhase().name());
         assertNull(requests.findById(expired.id()).orElseThrow().getPhotosSharedAt());
+        mvc.perform(get("/trueshot").session(expired.buyer().session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].phase").value("COMPLETED"))
+                .andExpect(jsonPath("$[0].photosSharedAt").hasJsonPath())
+                .andExpect(jsonPath("$[0].photosSharedAt").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test void invalidOrMissingAnalysisAndWrongSellerDoNotConsumeSubmission() throws Exception {

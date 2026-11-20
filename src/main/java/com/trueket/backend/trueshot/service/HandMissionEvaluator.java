@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class HandMissionEvaluator {
-    public static final double MIN_GESTURE_CONFIDENCE = 0.8;
+    public static final double MIN_GESTURE_CONFIDENCE = 0.7;
     public static final double MAX_SCREEN_DISTANCE_RATIO = 0.1;
 
     private HandMissionEvaluator() {}

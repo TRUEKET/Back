@@ -44,7 +44,9 @@
 
 ### `GET /trueshot`
 
-내 요청을 최신순 배열로 반환한다. 항목은 `id`, `title`, `status`, `phase`, `createdAt`, `expiresAt`이다. 30분 요청 기한이 지나면 주기 작업 전 조회에서도 실패 상태로 보인다.
+내 요청을 최신순 배열로 반환한다. 항목은 `id`, `title`, `status`, `phase`, `createdAt`, `expiresAt`, `failureCode`, `photosSharedAt`이다. 30분 요청 기한이 지나면 주기 작업 전 조회에서도 실패 상태로 보인다.
+
+`photosSharedAt`은 판매자가 인증 사진을 공유한 시각이며 공유 전에는 `null`이다. `phase=COMPLETED`이고 `photosSharedAt=null`이면 사진을 공유하지 않고 종료한 경우다. `SHARE_WAITING`의 `null`은 아직 공유 대기 중이므로 미전송 종료로 표시하지 않는다. 사진 미공유 여부로 인증 판정 `status` 자체를 변경하지는 않는다.
 
 ### `GET /trueshot/{id}`
 

@@ -100,7 +100,7 @@ JUDGING이면 사진을 재업로드하지 않고 result의 pollAfterMillis(기�
 
 ## 미션 비교
 
-- GESTURE: Victory + confidence ≥ 0.8.
+- GESTURE: Victory + confidence ≥ 0.7.
 - POINT_SCREEN: 검지 끝과 화면 사각형의 최소 유클리드 거리가 화면 짧은 변의 10% 이내. 내부는 거리 0이다. Pointing_Up 분류를 강제하거나 손가락 방향 벡터를 검사하지 않는다.
 - GESTURE_POSITION: 같은 손에서 브이 조건과 LEFT/RIGHT/ABOVE/BELOW 조건을 모두 만족해야 한다. 화면 경계는 지정 방향으로 인정하지 않는다.
 
