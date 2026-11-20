@@ -53,6 +53,14 @@ class TrueshotOpenApiTests {
         assertEquals("인증 사진 업로드", paths.path("/s/{token}/photo").path("post").path("summary").asText());
 
         JsonNode create = paths.path("/trueshot").path("post");
+        JsonNode updateTitle = paths.path("/trueshot/{id}").path("patch");
+        assertEquals("트루샷 요청 제목 수정", updateTitle.path("summary").asText());
+        assertTrue(updateTitle.path("security").get(0).has("sessionAuth"));
+        assertTrue(updateTitle.path("responses").has("200"));
+        assertTrue(updateTitle.path("responses").has("404"));
+        var titleSchema = resolve(spec, updateTitle.path("requestBody").path("content")
+                .path("application/json").path("schema"));
+        assertEquals(20, titleSchema.path("properties").path("title").path("maxLength").asInt());
         assertTrue(create.path("responses").has("201"));
         assertTrue(create.path("security").get(0).has("sessionAuth"));
         boolean csrf = false;

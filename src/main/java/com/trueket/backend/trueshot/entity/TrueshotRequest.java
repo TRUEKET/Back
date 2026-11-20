@@ -196,6 +196,13 @@ public class TrueshotRequest {
         return request;
     }
 
+    public void updateTitle(String title) {
+        if (title == null || title.isBlank() || title.length() > 20) {
+            throw new IllegalArgumentException("제목은 공백이 아닌 1~20자여야 합니다.");
+        }
+        this.title = title.strip();
+    }
+
     public boolean isExpired(OffsetDateTime now) {
         return !now.isBefore(expiresAt);
     }

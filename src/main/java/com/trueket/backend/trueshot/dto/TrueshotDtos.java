@@ -9,6 +9,7 @@ import com.trueket.backend.trueshot.entity.enums.MaskStatus;
 import com.trueket.backend.trueshot.entity.enums.TrueshotPhase;
 import com.trueket.backend.trueshot.entity.enums.TrueshotStatus;
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.time.OffsetDateTime;
@@ -33,6 +34,12 @@ public final class TrueshotDtos {
     public record SellerStartRequest(
             @Schema(description = "사진 전달 동의. 인증을 시작하려면 반드시 true", example = "true") @AssertTrue(message = "사진 전달에 동의해야 인증을 시작할 수 있어요")
             boolean sellerConsented
+    ) {}
+
+    public record UpdateTitleRequest(
+            @Schema(description = "수정할 제목. 필수, 공백만 입력 불가, 최대 20자. 앞뒤 공백은 제거", example = "DAY6 티켓 인증")
+            @NotBlank(message = "제목을 입력해 주세요")
+            @Size(max = 20, message = "요청 제목은 20자 이하로 입력해 주세요") String title
     ) {}
 
 
