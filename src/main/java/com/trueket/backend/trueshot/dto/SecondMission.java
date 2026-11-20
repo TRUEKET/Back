@@ -3,7 +3,7 @@ package com.trueket.backend.trueshot.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 public record SecondMission(
-            @Schema(description = "두 번째 촬영 미션 종류") Type type,
+            @Schema(description = "두 번째 촬영 미션 종류. 신규 발급은 GESTURE 또는 GESTURE_POSITION. POINT_SCREEN은 기존 발급 건 호환용") Type type,
             @Schema(description = "미션 손 동작. POINT_SCREEN에서는 null", example = "Victory") String gesture,
             @Schema(description = "미션 기준 예매 화면과 손의 상대 방향") Direction position
     ) {
