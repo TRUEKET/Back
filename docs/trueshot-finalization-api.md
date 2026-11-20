@@ -31,6 +31,9 @@
 - 브이 신뢰도 0.7 이상, 가리키기 근접 거리 화면 짧은 변의 10%, 위치 미션은 같은 손에서 동작과 방향 모두 만족한다.
 - 손 없음·화면 없음·화면 불확실·동작/위치 불일치는 실패다. 외부 서비스 장애는 판정 대기 기한 안에서는 JUDGING으로 재시도하고, 기한을 넘기면 ANALYSIS_TIMEOUT으로 실패 처리한다.
 - 저장된 judgment_result는 첫 사진 확인 여부, 분석 상태, 2차 화질 관측값(secondPhotoClear), 미션 비교 결과, 실패 사유를 포함한다. OCR 원문과 내부 Storage 키는 포함하지 않는다.
+- `judgment_result.missionDiagnostics`에는 판정 당시 `version=1`, 업로드 이미지 크기, AI가 확정한 예매 영역 `screen:{x,y,width,height}`, 손별 비교 결과와 적용 기준(`minGestureConfidence=0.7`, `maxScreenDistanceRatio=0.1`)을 저장한다. 모든 좌표·거리는 실제 업로드 이미지 픽셀 기준이며 화면 OCR text는 제외한다. 새 판정부터 기록하므로 과거 결과에는 이 필드가 없다.
+- 손별 기록은 `x,y,gesture,confidence`, 수평 `position`·수직 `verticalPosition`, `distanceToScreen`(영역 내부는 0), `allowedDistance`(영역 짧은 변의 10%), `nearScreen`, `gestureMatched`, `positionMatched`, `missionMatched`다. `gestureMatched`는 브이 미션에서 동작과 점수 조건, `positionMatched`는 위치 미션에서 방향 조건을 뜻한다. 적용되지 않거나 계산할 수 없는 항목은 null이다. 화면 미탐지·불확실 시 screen·거리·허용 거리·nearScreen·positionMatched·missionMatched는 null이며, 손이 없으면 hands는 빈 배열이다.
+- 진단은 원래 판정에 사용한 계산값을 그대로 보존한다. 가림 재시도에서는 기존 진단을 재사용하며 좌표나 점수를 다시 계산하지 않는다. 최종 판정 이후 소유 구매자의 상세 `judgmentResult.missionDiagnostics`에서 조회할 수 있고, 판매자 결과에는 기존 요약만 반환한다. 이 변경으로 동작 점수 기준·위치 경계·통과 조건은 바뀌지 않는다. 기존 JSON 컬럼을 사용하므로 DB 마이그레이션은 없다.
 - 가림 처리 장애가 나면 이미 계산한 결과를 저장해 두고 다음 재시도에서 화면 분석을 생략한다. 판정이 완료되기 전에는 구매자 상세에 임시 체크 결과를 노출하지 않는다.
 
 최종 성공은 이 촬영 미션을 만족했다는 의미다. 클라이언트 손 모양·좌표를 서버가 재인식하거나 사진 두 장의 티켓 동일성·진위·소유권을 보장하는 구현은 포함하지 않는다.

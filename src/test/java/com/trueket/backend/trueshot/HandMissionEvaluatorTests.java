@@ -55,6 +55,40 @@ class HandMissionEvaluatorTests {
         assertEquals(CheckStatus.NOT_REQUESTED,check(null,hand(50,200,"Victory",.99)).missionCheck().status());
     }
 
+    @Test void diagnosticsSeparateLowConfidenceWrongGestureAndWrongPosition() {
+        var mission=SecondMission.of(Type.GESTURE_POSITION,Direction.LEFT);
+        var output=check(mission,hand(50,200,"Victory",.66),hand(50,200,"None",.93),
+                hand(100,200,"Victory",.9),hand(50,200,"Victory",.73));
+        assertFalse(output.hands().get(0).gestureMatched());
+        assertTrue(output.hands().get(0).positionMatched());
+        assertFalse(output.hands().get(1).gestureMatched());
+        assertTrue(output.hands().get(2).gestureMatched());
+        assertFalse(output.hands().get(2).positionMatched());
+        assertEquals(Position.OVERLAP,output.hands().get(2).position());
+        assertEquals(List.of(3),output.missionCheck().matchedHandIndexes());
+        var diagnostic=output.diagnostics(.7,.1);
+        assertEquals(800,diagnostic.imageWidth());
+        assertEquals(new ScreenBounds(100,100,200,400),diagnostic.screen());
+    }
+
+    @Test void diagnosticsRecordExactPointingDistanceAndUnknownScreenWithoutInventingCoordinates() {
+        var mission=SecondMission.of(Type.POINT_SCREEN,null);
+        var output=check(mission,hand(200,200,"None",.93),hand(80,200,"None",.9),hand(79,200,"None",.9));
+        assertEquals(0.0,output.hands().get(0).distanceToScreen());
+        assertEquals(20.0,output.hands().get(1).distanceToScreen());
+        assertEquals(20.0,output.hands().get(1).allowedDistance());
+        assertTrue(output.hands().get(1).nearScreen());
+        assertFalse(output.hands().get(2).nearScreen());
+        assertNull(output.hands().get(0).gestureMatched());
+        assertNull(output.hands().get(0).positionMatched());
+        var unknown=HandMissionEvaluator.evaluate(new Input(800,800,List.of(hand(200,200,"None",.9))),
+                Status.SCREEN_UNCERTAIN,null,mission);
+        assertNull(unknown.diagnostics(.7,.1).screen());
+        assertNull(unknown.hands().get(0).distanceToScreen());
+        assertNull(unknown.hands().get(0).allowedDistance());
+        assertNull(unknown.hands().get(0).missionMatched());
+    }
+
     private Hand hand(double x,double y,String gesture,double confidence) { return new Hand(x,y,gesture,confidence); }
     private Output check(SecondMission mission,Hand... hands) {
         return HandMissionEvaluator.evaluate(new Input(800,800,List.of(hands)),Status.ANALYZED,screen,mission);

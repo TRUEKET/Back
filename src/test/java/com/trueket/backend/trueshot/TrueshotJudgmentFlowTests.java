@@ -222,6 +222,17 @@ class TrueshotJudgmentFlowTests {
                 .andExpect(jsonPath("$.failReasons[0]").exists()).andExpect(jsonPath("$.canShare").value(false));
         share(f,true,"[]").andExpect(status().isConflict());
         assertNotNull(requests.findById(f.id()).orElseThrow().getJudgedAt());
+        var diagnostics=requests.findById(f.id()).orElseThrow().getJudgmentResult().path("missionDiagnostics");
+        assertEquals(400,diagnostics.path("imageWidth").asInt());
+        assertEquals(120.0,diagnostics.path("screen").path("x").asDouble());
+        assertEquals(160.0,diagnostics.path("screen").path("width").asDouble());
+        assertFalse(diagnostics.path("screen").has("text"));
+        var hand=diagnostics.path("hands").get(0);
+        assertEquals(100.0,hand.path("distanceToScreen").asDouble());
+        assertEquals(16.0,hand.path("allowedDistance").asDouble());
+        assertFalse(hand.path("gestureMatched").asBoolean());
+        assertTrue(hand.path("positionMatched").asBoolean());
+        buyerDetail(f).andExpect(jsonPath("$.judgmentResult.missionDiagnostics").exists());
         verify(masks,never()).detect(any());
     }
 
