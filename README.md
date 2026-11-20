@@ -8,6 +8,8 @@
 
 [Frontend 저장소](https://github.com/TRUEKET/Front) · [Backend 저장소](https://github.com/TRUEKET/Back) · [시연 안내](docs/demo-guide.md) · [테스트 실행 안내](docs/testing.md)
 
+백엔드 배포 url : https://13.124.146.122.sslip.io
+
 ## 주요 기능
 
 | 기능 | 구현 내용 |
@@ -62,7 +64,7 @@ src/main/java/com/trueket/backend
 ├── analyze      # 대화 판독·AI 호출·서버 위험 판정
 ├── feedback     # 판독 피드백
 ├── identifier   # 식별자 정규화·해시·암호화·마스킹
-├── lookup       # 기존 신고 조회
+├── lookup       # 기존 신고 검색
 ├── report       # 신고·증빙·본인 신고
 ├── dispute      # 이의제기
 └── trueshot     # 촬영 요청·미션·판정·공유·만료
@@ -126,7 +128,7 @@ bash gradlew bootRun
 - OpenAPI: `/v3/api-docs/accounts`, `/v3/api-docs/analysis`
 - JWT 대신 **서버 세션 쿠키**를 사용합니다. 먼저 `GET /auth/csrf`로 토큰을 받고 변경 요청의 `X-CSRF-TOKEN` 헤더에 넣습니다. 가입·로그인·로그아웃 후에는 새 토큰을 받습니다.
 - 브라우저 연동은 쿠키를 포함해야 하며, 별도 출처 구성에서는 서버 CORS와 HTTPS·쿠키 정책을 함께 맞춰야 합니다.
-- 운영 `prod` 프로필에서는 Swagger가 기본 비활성입니다. 필요할 때 서버 설정의 `SWAGGER_ENABLED=true`로 활성화합니다.
+- 운영 시의 `prod` 프로필에서는 Swagger가 기본 비활성입니다. 필요할 때 서버 설정의 `SWAGGER_ENABLED=true`로 활성화합니다.
 
 | 영역 | 상세 문서 |
 | --- | --- |
