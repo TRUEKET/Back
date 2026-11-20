@@ -212,6 +212,47 @@ class TrueshotJudgmentFlowTests {
         verify(masks,never()).detect(any());
     }
 
+    @Test void secondPhotoReceivedInTimeFinishesAfterShootingDeadline() throws Exception {
+        var f=fixture(true);
+        doAnswer(call -> {
+            // 수신 검사는 통과했고 원본 저장 중 촬영 기한이 지난 상황이다.
+            var request=requests.findById(f.id()).orElseThrow();
+            org.springframework.test.util.ReflectionTestUtils.setField(request,"deadline2",OffsetDateTime.now().minusSeconds(1));
+            return null;
+        }).when(originals).upload(anyString(),any(),anyString());
+
+        submit(f,analysis(true)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(true))
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"));
+        expiry.expireRequests();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PASSED"))
+                .andExpect(jsonPath("$.phase").value("SHARE_WAITING"))
+                .andExpect(jsonPath("$.failureCode").isEmpty());
+        assertEquals(2,photos.findByRequestId(f.id()).size());
+    }
+
+    @Test void pendingSecondPhotoDoesNotReturnToShootingWhenItsDeadlineExpires() throws Exception {
+        var f=fixture(true);
+        when(screens.detect(any())).thenThrow(unavailable());
+        submit(f,analysis(true)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(true))
+                .andExpect(jsonPath("$.phase").value("JUDGING"));
+        jdbc.update("update trueshot_requests set deadline_2=? where id=?",OffsetDateTime.now().minusSeconds(1),f.id());
+
+        expiry.expireRequests();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("JUDGING"))
+                .andExpect(jsonPath("$.failureCode").isEmpty())
+                .andExpect(jsonPath("$.pollAfterMillis").value(2000));
+        doReturn(new BookingScreenDetector.Detection(true,true,.3,.3,.4,.4,"",true)).when(screens).detect(any());
+        expiry.retryJudgments();
+        mvc.perform(get(f.path()+"/result").session(f.seller().session()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.phase").value("SHARE_WAITING"))
+                .andExpect(jsonPath("$.failureCode").isEmpty());
+        verify(originals,times(1)).upload(anyString(),any(),anyString());
+    }
+
     @Test void modelOutageKeepsOneSubmissionAndRetriesStoredPhotoWithoutNewUpload() throws Exception {
         var f=fixture(true);
         when(screens.detect(any())).thenThrow(unavailable());

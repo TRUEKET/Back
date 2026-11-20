@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.CreateRequest;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.RequestDetail;
 import com.trueket.backend.trueshot.dto.TrueshotDtos.RequestSummary;
+import com.trueket.backend.trueshot.dto.TrueshotDtos.UpdateTitleRequest;
 import com.trueket.backend.trueshot.service.TrueshotRequestService;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
@@ -86,6 +87,20 @@ public class TrueshotController {
     public ResponseEntity<RequestDetail> detail(@Parameter(hidden = true) Authentication authentication, @Parameter(description = "트루샷 요청 ID", example = "1") @PathVariable Long id) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .body(service.detail(Long.valueOf(authentication.getName()), id));
+    }
+
+    @Operation(summary = "트루샷 요청 제목 수정", description = "로그인한 구매자 본인의 요청 제목을 수정합니다. 제목은 필수이며 최대 20자, 공백만 입력할 수 없습니다. 앞뒤 공백은 제거합니다. 인증 진행·완료·만료 상태에서도 수정할 수 있으며 수정된 요청 상세를 반환합니다.")
+    @Parameter(name = "X-CSRF-TOKEN", in = ParameterIn.HEADER, required = true, schema = @Schema(type = "string"),
+            description = "같은 브라우저에서 GET /auth/csrf로 발급받은 token 값. 로그인 후 재발급하세요.")
+    @ApiResponse(responseCode = "200", description = "제목 수정 완료, GET 상세와 같은 응답")
+    @ApiResponse(responseCode = "400", description = "제목 누락·공백 또는 20자 초과", content = @Content)
+    @ApiResponse(responseCode = "404", description = "요청이 없거나 다른 구매자의 요청", content = @Content)
+    @PatchMapping("/{id}")
+    public ResponseEntity<RequestDetail> updateTitle(@Parameter(hidden = true) Authentication authentication,
+            @Parameter(description = "트루샷 요청 ID", example = "1") @PathVariable Long id,
+            @Valid @RequestBody UpdateTitleRequest input) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(service.updateTitle(Long.valueOf(authentication.getName()), id, input.title()));
     }
 
     @Operation(summary = "공유된 마스킹 사진 조회", description = "구매자가 요청 상세 응답의 photos에 포함된 공유 사진을 표시할 때 호출합니다.")

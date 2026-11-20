@@ -73,13 +73,27 @@ public class TrueshotRequestService {
         activeUser(userId);
         TrueshotRequest request = requests.findByIdAndUserId(requestId, userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "트루샷 요청을 찾을 수 없어요."));
+        return detail(request);
+    }
+
+    @Transactional
+    public RequestDetail updateTitle(Long userId, Long requestId, String title) {
+        activeUser(userId);
+        // 촬영·판정·만료 처리와 같은 행 잠금을 사용해 제목 수정이 다른 상태를 덮어쓰지 않게 한다.
+        var request = requests.findByIdAndUserIdForUpdate(requestId, userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "트루샷 요청을 찾을 수 없어요."));
+        request.updateTitle(title);
+        return detail(request);
+    }
+
+    private RequestDetail detail(TrueshotRequest request) {
         var now=OffsetDateTime.now(ZoneOffset.UTC)
                 .truncatedTo(ChronoUnit.MICROS);
         var links=request.getStatus()==TrueshotStatus.PASSED && request.getPhotosSharedAt()!=null && now.isBefore(request.getPurgeAt())
-                ? photos.findByRequestId(requestId).stream()
+                ? photos.findByRequestId(request.getId()).stream()
                     .filter(photo -> photo.getMaskStatus()==MaskStatus.READY && photo.getMaskedImage()!=null)
                     .sorted(java.util.Comparator.comparing(com.trueket.backend.trueshot.entity.TrueshotPhoto::getNumber))
-                    .map(photo -> new PhotoLink(photo.getNumber(),"/trueshot/"+requestId+"/photos/"+photo.getNumber())).toList()
+                    .map(photo -> new PhotoLink(photo.getNumber(),"/trueshot/"+request.getId()+"/photos/"+photo.getNumber())).toList()
                 : List.<PhotoLink>of();
         return RequestDetail.from(request, now, links);
     }
